@@ -2,3 +2,6 @@ node_modules/
 
 # canopy specific
 site/
+
+# remove this if you would like to commit the cache
+.cache
