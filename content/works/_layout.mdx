@@ -1,9 +1,14 @@
+export const HelloWorld = () => {
+  return "hello world";
+};
+
 # {props.manifest?.label?.en?.[0] || String(props.manifest?.label || 'Untitled')}
 
-<p><strong>ID:</strong> {props.manifest?.id}</p>
-{props.manifest?.summary && (
-  <p>{props.manifest.summary?.en?.[0] || String(props.manifest.summary)}</p>
-)}
+<p>
+  <strong>ID:</strong> {props.manifest?.id}
+</p>
+
+<HelloWorld />
 
 ## Canvases
 
@@ -12,4 +17,3 @@
     <li key={canvas.id}>{canvas.label?.en?.[0] || canvas.id}</li>
   ))}
 </ul>
-

@@ -2,6 +2,7 @@ const fs = require("fs");
 const fsp = fs.promises;
 const path = require("path");
 const { pathToFileURL } = require("url");
+const crypto = require("crypto");
 const React = require("react");
 const ReactDOMServer = require("react-dom/server");
 let Layout = require("./layout");
@@ -73,7 +74,13 @@ async function compileMdxFile(filePath, outPath, extraProps = {}) {
   const tmpFile = path.join(CACHE_DIR, relCacheName);
   await fsp.writeFile(tmpFile, code, "utf8");
   console.log('[mdx] importing', tmpFile);
-  const mod = await import(pathToFileURL(tmpFile).href);
+  // Bust ESM module cache using source mtime to ensure dev rebuilds pick up changes
+  let bust = '';
+  try {
+    const st = fs.statSync(filePath);
+    bust = `?v=${Math.floor(st.mtimeMs)}`;
+  } catch (_) {}
+  const mod = await import(pathToFileURL(tmpFile).href + bust);
   const MDXContent = mod.default || mod.MDXContent || mod;
   console.log('[mdx] rendering', filePath);
   const page = React.createElement(
@@ -125,7 +132,13 @@ async function compileMdxToComponent(filePath) {
       .replace(/\.mdx$/i, "") + ".mjs";
   const tmpFile = path.join(CACHE_DIR, relCacheName);
   await fsp.writeFile(tmpFile, code, "utf8");
-  const mod = await import(pathToFileURL(tmpFile).href);
+  // Bust ESM module cache using source mtime to ensure dev rebuilds pick up changes
+  let bust = '';
+  try {
+    const st = fs.statSync(filePath);
+    bust = `?v=${Math.floor(st.mtimeMs)}`;
+  } catch (_) {}
+  const mod = await import(pathToFileURL(tmpFile).href + bust);
   return mod.default || mod.MDXContent || mod;
 }
 
@@ -248,20 +261,34 @@ async function build() {
 }
 
 async function loadConfig() {
-  const configPath = path.resolve("canopy.yml");
-  if (!fs.existsSync(configPath)) return;
-  try {
-    const raw = await fsp.readFile(configPath, "utf8");
-    const data = yaml.load(raw) || {};
-    // shallow merge; keep defaults if unspecified
-    CONFIG = {
-      collection: {
-        uri: (data.collection && data.collection.uri) || CONFIG.collection.uri,
-      },
-    };
-    console.log("Loaded config from canopy.yml");
-  } catch (e) {
-    console.warn("Failed to read canopy.yml:", e.message);
+  const overrideConfigPath = process.env.CANOPY_CONFIG;
+  const configPath = path.resolve(overrideConfigPath || "canopy.yml");
+  if (fs.existsSync(configPath)) {
+    try {
+      const raw = await fsp.readFile(configPath, "utf8");
+      const data = yaml.load(raw) || {};
+      // shallow merge; keep defaults if unspecified
+      CONFIG = {
+        collection: {
+          uri: (data.collection && data.collection.uri) || CONFIG.collection.uri,
+        },
+      };
+      console.log(
+        "Loaded config from",
+        overrideConfigPath ? overrideConfigPath : "canopy.yml"
+      );
+    } catch (e) {
+      console.warn(
+        "Failed to read",
+        overrideConfigPath ? overrideConfigPath : "canopy.yml",
+        e.message
+      );
+    }
+  }
+  // Environment variable override for collection URI (never writes to disk)
+  if (process.env.CANOPY_COLLECTION_URI) {
+    CONFIG.collection.uri = String(process.env.CANOPY_COLLECTION_URI);
+    console.log("Using collection URI from CANOPY_COLLECTION_URI");
   }
 }
 
@@ -306,11 +333,11 @@ async function buildIiifCollectionPages() {
     return;
   }
   ensureDirSync(IIIF_CACHE_MANIFESTS_DIR);
-  let collection = await loadCachedCollection();
-  // Try configured URI first, then local default path
+  // Always fetch the source collection from canopy.yml; do not read/write cache
   const collectionUri =
     (CONFIG && CONFIG.collection && CONFIG.collection.uri) || null;
-  if (!collection && collectionUri) {
+  let collection = null;
+  if (collectionUri) {
     collection = await readJsonFromUri(collectionUri);
   }
   if (!collection) {
@@ -318,10 +345,23 @@ async function buildIiifCollectionPages() {
     return;
   }
   collection = await normalizeToV3(collection);
-  // Cache fetched collection (do not overwrite if loaded from local default unless desired)
-  if (collectionUri && (await isHttpUrl(collectionUri))) {
-    await saveCachedCollection(collection);
+  // Compare against tracked collection signature; flush manifests cache if changed
+  const index = await loadManifestIndex();
+  const currentSig = {
+    uri: String(collectionUri || ""),
+    hash: computeHash(collection),
+  };
+  const prev = (index && index.collection) || null;
+  // Only flush when the source collection URI changes; content changes at the
+  // same URI should NOT trigger a flush.
+  const changed = !prev || prev.uri !== currentSig.uri;
+  if (changed) {
+    console.log("IIIF: Source collection signature changed; flushing manifest cache.");
+    await flushManifestCache();
+    index.byId = {};
   }
+  index.collection = { ...currentSig, updatedAt: new Date().toISOString() };
+  await saveManifestIndex(index);
 
   const WorksLayout = await compileMdxToComponent(worksLayoutPath);
   const SiteLayout = Layout;
@@ -410,10 +450,10 @@ async function loadManifestIndex() {
   try {
     if (fs.existsSync(IIIF_CACHE_INDEX)) {
       const idx = await readJson(IIIF_CACHE_INDEX);
-      return idx && typeof idx === "object" ? idx : { byId: {} };
+      return idx && typeof idx === "object" ? idx : { byId: {}, collection: null };
     }
   } catch (_) {}
-  return { byId: {} };
+  return { byId: {}, collection: null };
 }
 
 async function saveManifestIndex(index) {
@@ -490,6 +530,40 @@ async function readJsonFromUri(uri) {
     console.warn("IIIF: Failed to load", uri, e.message);
     return null;
   }
+}
+
+function computeHash(obj) {
+  try {
+    const json = stableStringify(obj);
+    return crypto.createHash("sha256").update(json).digest("hex");
+  } catch (_) {
+    return "";
+  }
+}
+
+function stableStringify(value) {
+  return JSON.stringify(deepSort(value));
+}
+
+function deepSort(value) {
+  if (Array.isArray(value)) {
+    return value.map(deepSort);
+  }
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const key of Object.keys(value).sort()) {
+      out[key] = deepSort(value[key]);
+    }
+    return out;
+  }
+  return value;
+}
+
+async function flushManifestCache() {
+  try {
+    await fsp.rm(IIIF_CACHE_MANIFESTS_DIR, { recursive: true, force: true });
+  } catch (_) {}
+  ensureDirSync(IIIF_CACHE_MANIFESTS_DIR);
 }
 
 module.exports = { build };

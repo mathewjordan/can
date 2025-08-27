@@ -198,6 +198,11 @@ function dev() {
     process.exit(1);
   }
   console.log('Initial build...');
+  if (process.env.DEV_ONCE) {
+    // Build once and exit (used for tests/CI)
+    runBuild().then(() => process.exit(0)).catch(() => process.exit(1));
+    return;
+  }
   runBuild();
   startServer();
   console.log('Watching', CONTENT_DIR, '(Ctrl+C to stop)');
