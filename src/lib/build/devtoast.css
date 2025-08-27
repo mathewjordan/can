@@ -1,0 +1,14 @@
+#__lr_toast {
+  position: fixed;
+  bottom: 1rem;
+  right: 1rem;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font: 1rem system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Helvetica,
+    Arial, sans-serif;
+  z-index: 99999;
+  opacity: 0;
+  transition: opacity 0.5s ease;
+}

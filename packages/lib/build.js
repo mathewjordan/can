@@ -53,7 +53,7 @@ function htmlShell({ title, body, cssHref }) {
 async function compileMdxFile(filePath, outPath, extraProps = {}) {
   const { compile } = await import("@mdx-js/mdx");
   // Debug logs for build flow
-  // console.log('Reading', filePath);
+  console.log('[mdx] reading', filePath);
   const source = await fsp.readFile(filePath, "utf8");
   const title = extractTitle(source);
   const compiled = await compile(source, {
@@ -72,10 +72,10 @@ async function compileMdxFile(filePath, outPath, extraProps = {}) {
       .replace(/\.mdx$/i, "") + ".mjs";
   const tmpFile = path.join(CACHE_DIR, relCacheName);
   await fsp.writeFile(tmpFile, code, "utf8");
-  // console.log('Importing compiled module', tmpFile);
+  console.log('[mdx] importing', tmpFile);
   const mod = await import(pathToFileURL(tmpFile).href);
   const MDXContent = mod.default || mod.MDXContent || mod;
-  // console.log('Rendering to static markup');
+  console.log('[mdx] rendering', filePath);
   const page = React.createElement(
     Layout,
     {},
@@ -186,8 +186,9 @@ async function processEntry(absPath) {
       const extra =
         base.toLowerCase() === "sitemap.mdx" ? { pages: PAGES } : {};
       const html = await compileMdxFile(absPath, outPath, extra);
+      console.log("[mdx] compiled type:", typeof html, 'len:', html && html.length);
       console.log("Writing HTML to", outPath);
-      await fsp.writeFile(outPath, html, "utf8");
+      await fsp.writeFile(outPath, html || '', "utf8");
       console.log("Built", path.relative(process.cwd(), outPath));
     } catch (err) {
       console.error("MDX build failed for", absPath, "\n", err.message);
@@ -213,7 +214,7 @@ async function walk(dir) {
   }
 }
 
-async function main() {
+async function build() {
   if (!fs.existsSync(CONTENT_DIR)) {
     console.error("No content directory found at", CONTENT_DIR);
     process.exit(1);
@@ -373,7 +374,7 @@ async function buildIiifCollectionPages() {
     } catch (e) {
       console.warn(
         "IIIF: Failed to render page for manifest",
-        manifestPath,
+        id || '<unknown>',
         e.message
       );
     }
@@ -491,8 +492,10 @@ async function readJsonFromUri(uri) {
   }
 }
 
+module.exports = { build };
+
 if (require.main === module) {
-  main().catch((e) => {
+  build().catch((e) => {
     console.error(e);
     process.exit(1);
   });

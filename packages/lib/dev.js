@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const { build } = require('./build');
 const http = require('http');
 const url = require('url');
 
@@ -10,17 +11,13 @@ const PORT = Number(process.env.PORT || 3000);
 let onBuildSuccess = () => {};
 let onBuildStart = () => {};
 
-function runBuild() {
-  const proc = spawn(process.execPath, [path.resolve('src/build.js')], {
-    stdio: 'inherit'
-  });
-  proc.on('exit', (code) => {
-    if (code !== 0) {
-      console.error('Build failed with code', code);
-    } else {
-      try { onBuildSuccess(); } catch (_) {}
-    }
-  });
+async function runBuild() {
+  try {
+    await build();
+    try { onBuildSuccess(); } catch (_) {}
+  } catch (e) {
+    console.error('Build failed:', e && e.message ? e.message : e);
+  }
 }
 
 function tryRecursiveWatch() {
@@ -195,7 +192,7 @@ function startServer() {
   return server;
 }
 
-function main() {
+function dev() {
   if (!fs.existsSync(CONTENT_DIR)) {
     console.error('No content directory found at', CONTENT_DIR);
     process.exit(1);
@@ -208,4 +205,6 @@ function main() {
   if (!rw) watchPerDir();
 }
 
-if (require.main === module) main();
+module.exports = { dev };
+
+if (require.main === module) dev();

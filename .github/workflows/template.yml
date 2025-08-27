@@ -1,0 +1,51 @@
+name: Update template branch
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build-template:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: Resolve published @canopy-iiif/lib version
+        id: ver
+        run: |
+          echo "VERSION=$(npm view @canopy-iiif/lib version || echo '')" >> $GITHUB_OUTPUT
+
+      - name: Prepare clean template
+        run: |
+          rm -rf dist-template
+          mkdir -p dist-template
+          rsync -a --delete \
+            --exclude ".git" \
+            --exclude "node_modules" \
+            --exclude "packages" \
+            --exclude ".cache" \
+            --exclude ".github/workflows/template.yml" \
+            ./ dist-template/
+
+          VERSION="${{ steps.ver.outputs.VERSION }}"
+          node -e "const fs=require('fs');const p='dist-template/package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));if(j.dependencies&&j.dependencies['@canopy-iiif/lib']){j.dependencies['@canopy-iiif/lib']=VERSION?('^'+VERSION):'*'}fs.writeFileSync(p,JSON.stringify(j,null,2))"
+
+      - name: Push to template branch
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd dist-template
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Update template from main"
+          git branch -M template
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" template
