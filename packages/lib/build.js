@@ -185,11 +185,15 @@ async function compileMdxFile(filePath, outPath, extraProps = {}) {
     .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
     .split(path.sep)
     .join("/");
-  const jsRel = path
-    .relative(path.dirname(outPath), path.join(OUT_DIR, "canopy-viewer.js"))
-    .split(path.sep)
-    .join("/");
-  return htmlShell({ title, body, cssHref: cssRel || "styles.css", scriptHref: jsRel || "canopy-viewer.js" });
+  const needsHydrate =
+    body.includes('data-canopy-hydrate') || body.includes('data-canopy-viewer');
+  const jsRel = needsHydrate
+    ? path
+        .relative(path.dirname(outPath), path.join(OUT_DIR, "canopy-viewer.js"))
+        .split(path.sep)
+        .join("/")
+    : null;
+  return htmlShell({ title, body, cssHref: cssRel || "styles.css", scriptHref: jsRel });
 }
 
 async function copyFile(src, dest) {
@@ -507,11 +511,15 @@ async function buildIiifCollectionPages() {
         .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
         .split(path.sep)
         .join("/");
-      const jsRel = path
-        .relative(path.dirname(outPath), path.join(OUT_DIR, "canopy-viewer.js"))
-        .split(path.sep)
-        .join("/");
-      const html = htmlShell({ title, body, cssHref: cssRel || "styles.css", scriptHref: jsRel || "canopy-viewer.js" });
+      const needsHydrate =
+        body.includes('data-canopy-hydrate') || body.includes('data-canopy-viewer');
+      const jsRel = needsHydrate
+        ? path
+            .relative(path.dirname(outPath), path.join(OUT_DIR, "canopy-viewer.js"))
+            .split(path.sep)
+            .join("/")
+        : null;
+      const html = htmlShell({ title, body, cssHref: cssRel || "styles.css", scriptHref: jsRel });
       await fsp.writeFile(outPath, html, "utf8");
       console.log("IIIF: Built", path.relative(process.cwd(), outPath));
     } catch (e) {
