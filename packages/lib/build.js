@@ -95,8 +95,24 @@ async function ensureClientRuntime() {
   const entry = `
     import React from 'react';
     import { createRoot } from 'react-dom/client';
+    import * as UI from '@canopy-iiif/ui';
     import CloverViewer from '@samvera/clover-iiif/viewer';
-    function boot() {
+    function hydrateCanopy() {
+      // Generic hydrator: <div data-canopy-hydrate data-component="Name" data-props="{...}"></div>
+      document.querySelectorAll('[data-canopy-hydrate]').forEach((el) => {
+        if (el.__hydrated) return; el.__hydrated = true;
+        const name = el.getAttribute('data-component') || '';
+        const raw = el.getAttribute('data-props') || '';
+        let props = {};
+        try { props = raw ? JSON.parse(decodeURIComponent(raw)) : {}; } catch (_) {}
+        let Comp = UI && UI[name];
+        // Special-cases: prefer Clover's React component for explicit names
+        if (!Comp && (name === 'Viewer' || name === 'CloverViewer')) Comp = CloverViewer;
+        if (!Comp) return;
+        const root = createRoot(el);
+        root.render(React.createElement(Comp, props));
+      });
+      // Back-compat: older placeholders
       document.querySelectorAll('[data-canopy-viewer]').forEach((el) => {
         if (el.__hydrated) return; el.__hydrated = true;
         const iiifContent = el.getAttribute('data-iiif-content') || '';
@@ -104,8 +120,8 @@ async function ensureClientRuntime() {
         root.render(React.createElement(CloverViewer, { iiifContent }));
       });
     }
-    if (document.readyState !== 'loading') boot();
-    else document.addEventListener('DOMContentLoaded', boot);
+    if (document.readyState !== 'loading') hydrateCanopy();
+    else document.addEventListener('DOMContentLoaded', hydrateCanopy);
   `;
   ensureDirSync(OUT_DIR);
   await esbuild.build({

@@ -1,19 +1,27 @@
 // src/iiif/Viewer.jsx
+import React2 from "react";
+
+// src/Hydrate.jsx
 import React from "react";
-function Viewer({ iiifContent }) {
-  const content = typeof iiifContent === "string" ? iiifContent : "";
+function Hydrate({ component, ...props }) {
+  const payload = encodeURIComponent(JSON.stringify(props || {}));
   return /* @__PURE__ */ React.createElement(
     "div",
     {
-      className: "canopy--viewer",
-      "data-canopy-viewer": true,
-      "data-iiif-content": content
+      "data-canopy-hydrate": true,
+      "data-component": component,
+      "data-props": payload
     }
   );
 }
 
+// src/iiif/Viewer.jsx
+function Viewer(props) {
+  return /* @__PURE__ */ React2.createElement(Hydrate, { component: "CloverViewer", ...props });
+}
+
 // src/Fallback.jsx
-import React2 from "react";
+import React3 from "react";
 function Fallback({ name, ...props }) {
   const style = {
     padding: "0.75rem 1rem",
@@ -23,10 +31,18 @@ function Fallback({ name, ...props }) {
     background: "#f9fafb",
     fontSize: 14
   };
-  return /* @__PURE__ */ React2.createElement("div", { style, "data-fallback-component": name || "Unknown" }, /* @__PURE__ */ React2.createElement("strong", null, name || "Unknown component"), " not available in UI.");
+  return /* @__PURE__ */ React3.createElement("div", { style, "data-fallback-component": name || "Unknown" }, /* @__PURE__ */ React3.createElement("strong", null, name || "Unknown component"), " not available in UI.");
+}
+
+// src/HelloWorld.jsx
+import React4 from "react";
+function HelloWorld() {
+  return /* @__PURE__ */ React4.createElement("div", null, "Hello, World!");
 }
 export {
   Fallback,
+  HelloWorld,
+  Hydrate,
   Viewer
 };
 //# sourceMappingURL=index.js.map
