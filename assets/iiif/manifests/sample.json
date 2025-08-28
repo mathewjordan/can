@@ -1,0 +1,17 @@
+{
+  "@context": "http://iiif.io/api/presentation/3/context.json",
+  "id": "./assets/iiif/manifests/sample.json",
+  "type": "Manifest",
+  "label": { "en": ["Sample Manifest"] },
+  "items": [
+    {
+      "id": "./assets/iiif/manifests/canvas/1",
+      "type": "Canvas",
+      "height": 1000,
+      "width": 1000,
+      "label": { "en": ["Canvas 1"] },
+      "items": []
+    }
+  ]
+}
+

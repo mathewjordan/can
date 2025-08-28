@@ -8,14 +8,15 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "node -e \"require('@canopy-iiif/lib').build()\"",
-    "dev": "node -e \"require('@canopy-iiif/lib').dev()\"",
+    "build": "npm -w @canopy-iiif/ui run build && node -e \"require('@canopy-iiif/lib').build()\"",
+    "dev": "npm -w @canopy-iiif/ui run watch & node -e \"require('@canopy-iiif/lib').dev()\"",
     "test": "echo \"No tests yet\" && exit 0",
     "changeset": "changeset",
     "version:packages": "changeset version",
     "release": "node scripts/guard-publish.js && changeset publish"
   },
   "dependencies": {
+    "@canopy-iiif/ui": "workspace:*",
     "@canopy-iiif/lib": "workspace:*",
     "@samvera/clover-iiif": "^3.0.0"
   },

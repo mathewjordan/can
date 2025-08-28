@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../src/iiif/Viewer.jsx", "../src/Fallback.jsx"],
+  "sourcesContent": ["import React from \"react\";\n\n// Server: emit a placeholder div with data attributes.\n// Client: our site runtime hydrates this to a React Clover Viewer.\nexport default function Viewer({ iiifContent }) {\n  const content = typeof iiifContent === \"string\" ? iiifContent : \"\";\n  return (\n    <div\n      className=\"canopy--viewer\"\n      data-canopy-viewer\n      data-iiif-content={content}\n    />\n  );\n}\n", "import React from 'react';\n\nexport function Fallback({ name, ...props }) {\n  const style = {\n    padding: '0.75rem 1rem',\n    border: '1px dashed #d1d5db',\n    color: '#6b7280',\n    borderRadius: 6,\n    background: '#f9fafb',\n    fontSize: 14,\n  };\n  return (\n    <div style={style} data-fallback-component={name || 'Unknown'}>\n      <strong>{name || 'Unknown component'}</strong> not available in UI.\n    </div>\n  );\n}\n\n"],
+  "mappings": ";AAAA,OAAO,WAAW;AAIH,SAAR,OAAwB,EAAE,YAAY,GAAG;AAC9C,QAAM,UAAU,OAAO,gBAAgB,WAAW,cAAc;AAChE,SACE;AAAA,IAAC;AAAA;AAAA,MACC,WAAU;AAAA,MACV,sBAAkB;AAAA,MAClB,qBAAmB;AAAA;AAAA,EACrB;AAEJ;;;ACbA,OAAOA,YAAW;AAEX,SAAS,SAAS,EAAE,MAAM,GAAG,MAAM,GAAG;AAC3C,QAAM,QAAQ;AAAA,IACZ,SAAS;AAAA,IACT,QAAQ;AAAA,IACR,OAAO;AAAA,IACP,cAAc;AAAA,IACd,YAAY;AAAA,IACZ,UAAU;AAAA,EACZ;AACA,SACE,gBAAAA,OAAA,cAAC,SAAI,OAAc,2BAAyB,QAAQ,aAClD,gBAAAA,OAAA,cAAC,gBAAQ,QAAQ,mBAAoB,GAAS,uBAChD;AAEJ;",
+  "names": ["React"]
+}

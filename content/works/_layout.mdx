@@ -1,14 +1,10 @@
-export const HelloWorld = () => {
-  return "hello world";
-};
-
 # {props.manifest?.label?.en?.[0] || String(props.manifest?.label || 'Untitled')}
 
 <p>
   <strong>ID:</strong> {props.manifest?.id}
 </p>
 
-<HelloWorld />
+<Viewer iiifContent={props.manifest.id} />
 
 ## Canvases
 

@@ -5,6 +5,18 @@ const { pathToFileURL } = require("url");
 const crypto = require("crypto");
 const React = require("react");
 const ReactDOMServer = require("react-dom/server");
+// ESM-only in v3; load dynamically from CJS
+let MDXProviderCached = null;
+async function getMdxProvider() {
+  if (MDXProviderCached) return MDXProviderCached;
+  try {
+    const mod = await import("@mdx-js/react");
+    MDXProviderCached = mod.MDXProvider || mod.default;
+  } catch (_) {
+    MDXProviderCached = null;
+  }
+  return MDXProviderCached;
+}
 let Layout = require("./layout");
 const slugify = require("slugify");
 const yaml = require("js-yaml");
@@ -24,6 +36,21 @@ let CONFIG = {
     uri: "https://iiif.io/api/cookbook/recipe/0032-collection/collection.json",
   },
 };
+
+// Lazily load UI components from the workspace package and cache them.
+// We "blindly" accept all named exports and pass them to MDX.
+let UI_COMPONENTS = null;
+async function loadUiComponents() {
+  if (UI_COMPONENTS) return UI_COMPONENTS;
+  try {
+    const mod = await import("@canopy-iiif/ui");
+    // Use the namespace object as-is for MDX components mapping.
+    UI_COMPONENTS = mod || {};
+  } catch (_) {
+    UI_COMPONENTS = {};
+  }
+  return UI_COMPONENTS;
+}
 
 function ensureDirSync(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -47,8 +74,55 @@ function extractTitle(mdxSource) {
   return m ? m[1].trim() : "Untitled";
 }
 
-function htmlShell({ title, body, cssHref }) {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${title}</title><link rel="stylesheet" href="${cssHref}"></head><body>${body}</body></html>`;
+function htmlShell({ title, body, cssHref, scriptHref }) {
+  const scriptTag = scriptHref ? `<script defer src="${scriptHref}"></script>` : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${title}</title><link rel="stylesheet" href="${cssHref}">${scriptTag}</head><body>${body}</body></html>`;
+}
+
+async function ensureClientRuntime() {
+  // Bundle a tiny browser runtime that hydrates Viewer placeholders using React.
+  let esbuild = null;
+  try {
+    // Prefer UI's local esbuild to avoid adding new deps.
+    esbuild = require("../ui/node_modules/esbuild");
+  } catch (_) {
+    try { esbuild = require("esbuild"); } catch (_) {}
+  }
+  if (!esbuild) {
+    console.warn("[build] esbuild not available; Viewer will not hydrate in browser.");
+    return;
+  }
+  const entry = `
+    import React from 'react';
+    import { createRoot } from 'react-dom/client';
+    import CloverViewer from '@samvera/clover-iiif/viewer';
+    function boot() {
+      document.querySelectorAll('[data-canopy-viewer]').forEach((el) => {
+        if (el.__hydrated) return; el.__hydrated = true;
+        const iiifContent = el.getAttribute('data-iiif-content') || '';
+        const root = createRoot(el);
+        root.render(React.createElement(CloverViewer, { iiifContent }));
+      });
+    }
+    if (document.readyState !== 'loading') boot();
+    else document.addEventListener('DOMContentLoaded', boot);
+  `;
+  ensureDirSync(OUT_DIR);
+  await esbuild.build({
+    stdin: {
+      contents: entry,
+      resolveDir: process.cwd(),
+      loader: 'js',
+      sourcefile: 'canopy-viewer-entry.js',
+    },
+    outfile: path.join(OUT_DIR, 'canopy-viewer.js'),
+    platform: 'browser',
+    format: 'iife',
+    bundle: true,
+    sourcemap: true,
+    target: ['es2018'],
+    logLevel: 'silent',
+  });
 }
 
 async function compileMdxFile(filePath, outPath, extraProps = {}) {
@@ -83,17 +157,23 @@ async function compileMdxFile(filePath, outPath, extraProps = {}) {
   const mod = await import(pathToFileURL(tmpFile).href + bust);
   const MDXContent = mod.default || mod.MDXContent || mod;
   console.log('[mdx] rendering', filePath);
-  const page = React.createElement(
-    Layout,
-    {},
-    React.createElement(MDXContent, extraProps)
-  );
+  const components = await loadUiComponents();
+  const MDXProvider = await getMdxProvider();
+  const content = React.createElement(MDXContent, extraProps);
+  const wrapped = MDXProvider
+    ? React.createElement(MDXProvider, { components }, content)
+    : content;
+  const page = React.createElement(Layout, {}, wrapped);
   const body = ReactDOMServer.renderToStaticMarkup(page);
   const cssRel = path
     .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
     .split(path.sep)
     .join("/");
-  return htmlShell({ title, body, cssHref: cssRel || "styles.css" });
+  const jsRel = path
+    .relative(path.dirname(outPath), path.join(OUT_DIR, "canopy-viewer.js"))
+    .split(path.sep)
+    .join("/");
+  return htmlShell({ title, body, cssHref: cssRel || "styles.css", scriptHref: jsRel || "canopy-viewer.js" });
 }
 
 async function copyFile(src, dest) {
@@ -234,6 +314,7 @@ async function build() {
   }
   await cleanDir(OUT_DIR);
   await ensureStyles();
+  await ensureClientRuntime();
   await loadCustomLayout();
   await loadConfig();
   await buildIiifCollectionPages();
@@ -398,17 +479,23 @@ async function buildIiifCollectionPages() {
     ensureDirSync(path.dirname(outPath));
 
     try {
-      const page = React.createElement(
-        SiteLayout,
-        {},
-        React.createElement(WorksLayout, { manifest })
-      );
+      const components = await loadUiComponents();
+      const MDXProvider = await getMdxProvider();
+      const content = React.createElement(WorksLayout, { manifest });
+      const wrapped = MDXProvider
+        ? React.createElement(MDXProvider, { components }, content)
+        : content;
+      const page = React.createElement(SiteLayout, {}, wrapped);
       const body = ReactDOMServer.renderToStaticMarkup(page);
       const cssRel = path
         .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
         .split(path.sep)
         .join("/");
-      const html = htmlShell({ title, body, cssHref: cssRel || "styles.css" });
+      const jsRel = path
+        .relative(path.dirname(outPath), path.join(OUT_DIR, "canopy-viewer.js"))
+        .split(path.sep)
+        .join("/");
+      const html = htmlShell({ title, body, cssHref: cssRel || "styles.css", scriptHref: jsRel || "canopy-viewer.js" });
       await fsp.writeFile(outPath, html, "utf8");
       console.log("IIIF: Built", path.relative(process.cwd(), outPath));
     } catch (e) {
