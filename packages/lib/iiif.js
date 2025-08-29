@@ -198,7 +198,7 @@ async function loadConfig() {
   return CONFIG;
 }
 
-async function buildIiifCollectionPages(CONFIG, Layout) {
+async function buildIiifCollectionPages(CONFIG) {
   const worksDir = path.join(CONTENT_DIR, "works");
   const worksLayoutPath = path.join(worksDir, "_layout.mdx");
   if (!fs.existsSync(worksLayoutPath)) {
@@ -244,7 +244,6 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
   await saveManifestIndex(index);
 
   const WorksLayout = await mdx.compileMdxToComponent(worksLayoutPath);
-  const SiteLayout = Layout;
   // Recursively collect manifests across subcollections
   const tasks = [];
   async function collectTasksFromCollection(colObj, parentUri, visited) {
@@ -383,7 +382,7 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
           const app = await loadAppWrapper();
 
           const mdxContent = React.createElement(WorksLayout, { manifest });
-          const siteTree = React.createElement(SiteLayout, {}, mdxContent);
+          const siteTree = app && app.App ? mdxContent : mdxContent;
           const wrappedApp = app && app.App ? React.createElement(app.App, null, siteTree) : siteTree;
           const page = MDXProvider
             ? React.createElement(MDXProvider, { components: compMap }, wrappedApp)

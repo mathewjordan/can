@@ -65,7 +65,7 @@ async function ensureSearchRuntime() {
   });
 }
 
-async function buildSearchPage(Layout) {
+async function buildSearchPage() {
   try {
     const outPath = path.join(OUT_DIR, 'search.html');
     ensureDirSync(path.dirname(outPath));
@@ -88,7 +88,7 @@ async function buildSearchPage(Layout) {
     const compMap = { a: Anchor };
     const { loadAppWrapper } = require('./mdx');
     const app = await loadAppWrapper();
-    const inner = React.createElement(Layout, {}, content);
+    const inner = app && app.App ? content : content;
     const wrappedApp = app && app.App ? React.createElement(app.App, null, inner) : inner;
     const page = MDXProvider ? React.createElement(MDXProvider, { components: compMap }, wrappedApp) : wrappedApp;
     const body = ReactDOMServer.renderToStaticMarkup(page);

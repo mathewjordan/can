@@ -3,7 +3,6 @@ const mdx = require('./mdx');
 const iiif = require('./iiif');
 const search = require('./search');
 const { log, logLine } = require('./log');
-let Layout = require('./layout');
 
 let PAGES = [];
 
@@ -28,7 +27,7 @@ async function ensureStyles() {
 async function compileMdxFile(filePath, outPath, extraProps = {}) {
   const source = await fsp.readFile(filePath, 'utf8');
   const title = mdx.extractTitle(source);
-  const { body, head } = await mdx.compileMdxFile(filePath, outPath, Layout, extraProps);
+  const { body, head } = await mdx.compileMdxFile(filePath, outPath, null, extraProps);
   const cssRel = path.relative(path.dirname(outPath), path.join(OUT_DIR, 'styles.css')).split(path.sep).join('/');
   const needsHydrate = body.includes('data-canopy-hydrate') || body.includes('data-canopy-viewer');
   const jsRel = needsHydrate
@@ -72,13 +71,7 @@ async function walk(dir) {
   }
 }
 
-async function loadCustomLayout() {
-  const NewLayout = await mdx.loadCustomLayout(Layout);
-  if (NewLayout !== Layout) {
-    Layout = NewLayout;
-    console.log('Using custom layout: content/_layout.mdx');
-  }
-}
+// No global default layout; directory-scoped layouts are resolved per-page
 
 async function build() {
   if (!fs.existsSync(CONTENT_DIR)) {
@@ -91,11 +84,11 @@ async function build() {
   logLine('✓ Wrote styles.css\n', 'cyan');
   await mdx.ensureClientRuntime();
   logLine('✓ Prepared client hydration runtime\n', 'cyan', { dim: true });
-  await loadCustomLayout();
+  // No-op: global layout removed
 
   // Build IIIF works + collect search records
   const CONFIG = await iiif.loadConfig();
-  const { searchRecords } = await iiif.buildIiifCollectionPages(CONFIG, Layout);
+  const { searchRecords } = await iiif.buildIiifCollectionPages(CONFIG);
 
   // Collect pages metadata for sitemap injection
   const pages = [];
@@ -126,13 +119,13 @@ async function build() {
     if (!fs.existsSync(searchPath)) {
       await search.writeSearchIndex([]);
       await search.ensureSearchRuntime();
-      await search.buildSearchPage(Layout);
+      await search.buildSearchPage();
       logLine('✓ Created search page (empty index)', 'cyan');
     }
     if (Array.isArray(searchRecords)) {
       await search.writeSearchIndex(searchRecords);
       await search.ensureSearchRuntime();
-      await search.buildSearchPage(Layout);
+      await search.buildSearchPage();
       logLine(`✓ Search index: ${searchRecords.length} records\n`, 'cyan');
     }
   } catch (_) {}

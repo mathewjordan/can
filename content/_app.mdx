@@ -1,21 +1,6 @@
-{/\*
-Example global App wrapper for Canopy.
-
-- Head: injects tags into <head> for every page
-- default export (App): wraps page content with a shared header/footer
-
-Notes
-
-- Links written as "/…" are automatically prefixed with the base path
-  when deploying to GitHub Pages (handled by Canopy at build time).
-  \*/}
-
 export const Head = () => (
   <>
     <meta name="theme-color" content="#111" />
-    {/* Example favicon
-    <link rel="icon" href="/favicon.ico" />
-    */}
   </>
 );
 
@@ -23,7 +8,7 @@ export default function App({ children }) {
   return (
     <>
       <header className="site-header">
-        <a href="/" className="brand">My MDX Site</a>
+        <a href="/" className="brand">Canopy IIIF</a>
         <nav style={{ display: 'flex', gap: '0.75rem' }}>
           <a href="/">Home</a>
           <a href="/sitemap.html">Sitemap</a>

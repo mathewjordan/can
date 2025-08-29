@@ -48,24 +48,86 @@ function isReservedFile(p) {
   return base.startsWith('_');
 }
 
+// Cache for directory-scoped layouts
+const DIR_LAYOUTS = new Map();
+async function getNearestDirLayout(filePath) {
+  const dirStart = path.dirname(filePath);
+  let dir = dirStart;
+  while (dir && dir.startsWith(CONTENT_DIR)) {
+    const key = path.resolve(dir);
+    if (DIR_LAYOUTS.has(key)) {
+      const cached = DIR_LAYOUTS.get(key);
+      if (cached) return cached;
+    }
+    const candidate = path.join(dir, '_layout.mdx');
+    if (fs.existsSync(candidate)) {
+      try {
+        const Comp = await compileMdxToComponent(candidate);
+        DIR_LAYOUTS.set(key, Comp);
+        return Comp;
+      } catch (_) {
+        DIR_LAYOUTS.set(key, null);
+      }
+    } else {
+      DIR_LAYOUTS.set(key, null);
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
+
 let APP_WRAPPER = null; // { App, Head } or null
 async function loadAppWrapper() {
   if (APP_WRAPPER !== null) return APP_WRAPPER;
   const appPath = path.join(CONTENT_DIR, '_app.mdx');
   if (!fs.existsSync(appPath)) {
-    APP_WRAPPER = null;
-    return null;
+    // Keep missing _app as a build-time error as specified
+    throw new Error('Missing required file: content/_app.mdx');
   }
   const { compile } = await import('@mdx-js/mdx');
   const source = await fsp.readFile(appPath, 'utf8');
-  const compiled = await compile(source, { jsx: false, development: false, providerImportSource: '@mdx-js/react', jsxImportSource: 'react', format: 'mdx' });
-  const code = String(compiled);
+  let code = String(
+    await compile(source, {
+      jsx: false,
+      development: false,
+      providerImportSource: '@mdx-js/react',
+      jsxImportSource: 'react',
+      format: 'mdx',
+    })
+  );
+  // MDX v3 default export (MDXContent) does not forward external children.
+  // When present, expose the underlying layout function as __MDXLayout for wrapping.
+  if (/\bconst\s+MDXLayout\b/.test(code) && !/export\s+const\s+__MDXLayout\b/.test(code)) {
+    code += '\nexport const __MDXLayout = MDXLayout;\n';
+  }
   ensureDirSync(CACHE_DIR);
   const tmpFile = path.join(CACHE_DIR, '_app.mjs');
   await fsp.writeFile(tmpFile, code, 'utf8');
   const mod = await import(pathToFileURL(tmpFile).href + `?v=${Date.now()}`);
-  const App = mod.default || mod.App || null;
+  let App = mod.App || mod.__MDXLayout || mod.default || null;
   const Head = mod.Head || null;
+  // Prefer a component that renders its children, but do not hard-fail if probe fails.
+  let ok = false;
+  try {
+    const probe = React.createElement(App || (() => null), null, React.createElement('span', { 'data-canopy-probe': '1' }));
+    const out = ReactDOMServer.renderToStaticMarkup(probe);
+    ok = !!(out && out.indexOf('data-canopy-probe') !== -1);
+  } catch (_) {
+    ok = false;
+  }
+  if (!ok) {
+    // If default export swallowed children, try to recover using __MDXLayout
+    if (!App && mod.__MDXLayout) {
+      App = mod.__MDXLayout;
+    }
+    // Fallback to pass-through wrapper to avoid blocking builds
+    if (!App) {
+      App = function PassThrough(props) { return React.createElement(React.Fragment, null, props.children); };
+    }
+    try { require('./log').log('! Warning: content/_app.mdx did not clearly render {children}; proceeding with best-effort wrapper\n', 'yellow'); } catch (_) { console.warn('Warning: content/_app.mdx did not clearly render {children}; proceeding.'); }
+  }
   APP_WRAPPER = { App, Head };
   return APP_WRAPPER;
 }
@@ -105,11 +167,17 @@ async function compileMdxFile(filePath, outPath, Layout, extraProps = {}) {
     href = withBase(href);
     return React.createElement('a', { href, ...rest }, props.children);
   };
-  const compMap = { ...components, a: Anchor };
   const app = await loadAppWrapper();
-  const inner = React.createElement(Layout, {}, React.createElement(MDXContent, extraProps));
-  const wrapped = app && app.App ? React.createElement(app.App, null, inner) : inner;
-  const page = MDXProvider ? React.createElement(MDXProvider, { components: compMap }, wrapped) : wrapped;
+  const dirLayout = await getNearestDirLayout(filePath);
+  const contentNode = React.createElement(MDXContent, extraProps);
+  const withLayout = dirLayout
+    ? React.createElement(dirLayout, null, contentNode)
+    : contentNode;
+  const withApp = React.createElement(app.App, null, withLayout);
+  const compMap = { ...components, a: Anchor };
+  const page = MDXProvider
+    ? React.createElement(MDXProvider, { components: compMap }, withApp)
+    : withApp;
   const body = ReactDOMServer.renderToStaticMarkup(page);
   const head = app && app.Head ? ReactDOMServer.renderToStaticMarkup(React.createElement(app.Head)) : '';
   return { body, head };
@@ -144,15 +212,7 @@ async function compileMdxToComponent(filePath) {
 }
 
 async function loadCustomLayout(defaultLayout) {
-  const custom = path.join(CONTENT_DIR, '_layout.mdx');
-  if (fs.existsSync(custom)) {
-    try {
-      const Comp = await compileMdxToComponent(custom);
-      return function LayoutWrapper({ children }) {
-        return React.createElement(Comp, null, children);
-      };
-    } catch (_) {}
-  }
+  // Deprecated: directory-scoped layouts handled per-page via getNearestDirLayout
   return defaultLayout;
 }
 

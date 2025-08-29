@@ -1,11 +1,10 @@
-<header className="site-header">
-  <a href="/" className="brand">My MDX Site</a>
-</header>
-
-<main className="content">
-  {props.children}
-</main>
-
-<footer className="site-footer">
-  Built with MDX layout override
-</footer>
+<div className="banner">placeholder for eventual banner on this layout</div>
+<div>
+  <div>
+    {/* This is where content will be rendered by mdx pages using this layout */}
+    {props.children}
+  </div>
+  <aside>
+    <nav>placeholder for eventual sibling navigation</nav>
+  </aside>
+</div>
