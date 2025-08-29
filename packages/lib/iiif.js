@@ -225,8 +225,25 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
     const outPath = path.join(OUT_DIR, href);
     ensureDirSync(path.dirname(outPath));
     try {
-      const components = {}; // WorksLayout does not need MDXProvider wrapping here
-      const content = React.createElement(WorksLayout, { manifest });
+      // Provide MDX components mapping so tags like <Viewer/> and <HelloWorld/> resolve
+      let components = {};
+      try { components = await import('@canopy-iiif/ui'); } catch (_) { components = {}; }
+      // Gracefully handle HelloWorld if not provided anywhere
+      if (!components.HelloWorld) {
+        components.HelloWorld = components.Fallback
+          ? (props) => React.createElement(components.Fallback, { name: 'HelloWorld', ...props })
+          : () => null;
+      }
+      let MDXProvider = null;
+      try {
+        const mod = await import('@mdx-js/react');
+        MDXProvider = mod.MDXProvider || mod.default || null;
+      } catch (_) { MDXProvider = null; }
+
+      const mdxContent = React.createElement(WorksLayout, { manifest });
+      const content = MDXProvider
+        ? React.createElement(MDXProvider, { components }, mdxContent)
+        : mdxContent;
       const page = React.createElement(SiteLayout, {}, content);
       const body = ReactDOMServer.renderToStaticMarkup(page);
       const cssRel = path.relative(path.dirname(outPath), path.join(OUT_DIR, 'styles.css')).split(path.sep).join('/');
@@ -249,4 +266,3 @@ module.exports = {
   buildIiifCollectionPages,
   loadConfig,
 };
-

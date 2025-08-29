@@ -4,9 +4,7 @@ const { spawn } = require('child_process');
 const { build } = require('./build');
 const http = require('http');
 const url = require('url');
-
-const CONTENT_DIR = path.resolve('content');
-const SITE_DIR = path.resolve('site');
+const { CONTENT_DIR, OUT_DIR } = require('./common');
 const PORT = Number(process.env.PORT || 3000);
 let onBuildSuccess = () => {};
 let onBuildStart = () => {};
@@ -147,8 +145,8 @@ function startServer() {
 
     // Try path as-is, falling back to adding .html for extensionless routes
     const candidates = [
-      path.join(SITE_DIR, pathname),
-      path.join(SITE_DIR, pathname + '.html')
+      path.join(OUT_DIR, pathname),
+      path.join(OUT_DIR, pathname + '.html')
     ];
 
     let filePath = candidates.find((p) => fs.existsSync(p));
@@ -161,7 +159,7 @@ function startServer() {
 
     // Prevent path traversal by ensuring resolved path stays under SITE_DIR
     const resolved = path.resolve(filePath);
-    if (!resolved.startsWith(SITE_DIR)) {
+    if (!resolved.startsWith(OUT_DIR)) {
       res.statusCode = 403;
       res.end('Forbidden');
       return;
