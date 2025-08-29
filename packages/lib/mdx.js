@@ -134,7 +134,7 @@ async function ensureClientRuntime() {
   } catch (_) {
     try { esbuild = require('esbuild'); } catch (_) {}
   }
-  if (!esbuild) return;
+  if (!esbuild) { try { require('./log').log('Hydration runtime skipped (no esbuild)\n', 'yellow', { dim: true }); } catch (_) {} return; }
   const entry = `
     import React from 'react';
     import { createRoot } from 'react-dom/client';
@@ -189,4 +189,3 @@ module.exports = {
   loadCustomLayout,
   ensureClientRuntime,
 };
-

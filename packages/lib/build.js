@@ -2,6 +2,7 @@ const { fs, fsp, path, CONTENT_DIR, OUT_DIR, ensureDirSync, cleanDir, htmlShell 
 const mdx = require('./mdx');
 const iiif = require('./iiif');
 const search = require('./search');
+const { log, logLine } = require('./log');
 let Layout = require('./layout');
 
 let PAGES = [];
@@ -44,12 +45,12 @@ async function processEntry(absPath) {
     const outPath = mapOutPath(absPath);
     ensureDirSync(path.dirname(outPath));
     try {
-      console.log('Processing MDX', absPath);
+      try { log(`• Processing MDX ${absPath}\n`, 'blue'); } catch (_) {}
       const base = path.basename(absPath);
       const extra = base.toLowerCase() === 'sitemap.mdx' ? { pages: PAGES } : {};
       const html = await compileMdxFile(absPath, outPath, extra);
       await fsp.writeFile(outPath, html || '', 'utf8');
-      console.log('Built', path.relative(process.cwd(), outPath));
+      try { log(`✓ Built ${path.relative(process.cwd(), outPath)}\n`, 'green'); } catch (_) {}
     } catch (err) {
       console.error('MDX build failed for', absPath, '\n', err.message);
     }
@@ -58,7 +59,7 @@ async function processEntry(absPath) {
     const outPath = path.join(OUT_DIR, rel);
     ensureDirSync(path.dirname(outPath));
     await fsp.copyFile(absPath, outPath);
-    console.log('Copied', path.relative(process.cwd(), outPath));
+    try { log(`• Copied ${path.relative(process.cwd(), outPath)}\n`, 'cyan', { dim: true }); } catch (_) {}
   }
 }
 
@@ -85,8 +86,11 @@ async function build() {
     process.exit(1);
   }
   await cleanDir(OUT_DIR);
+  logLine('✓ Cleaned output directory\n', 'cyan');
   await ensureStyles();
+  logLine('✓ Wrote styles.css\n', 'cyan');
   await mdx.ensureClientRuntime();
+  logLine('✓ Prepared client hydration runtime\n', 'cyan', { dim: true });
   await loadCustomLayout();
 
   // Build IIIF works + collect search records
@@ -111,9 +115,10 @@ async function build() {
   }
   await collect(CONTENT_DIR);
   PAGES = pages;
-
   // Build all MDX and assets
+  logLine('• Building MDX pages...', 'blue', { bright: true });
   await walk(CONTENT_DIR);
+  logLine('✓ MDX pages built\n', 'green');
 
   // Ensure search artifacts
   try {
@@ -122,11 +127,13 @@ async function build() {
       await search.writeSearchIndex([]);
       await search.ensureSearchRuntime();
       await search.buildSearchPage(Layout);
+      logLine('✓ Created search page (empty index)', 'cyan');
     }
     if (Array.isArray(searchRecords)) {
       await search.writeSearchIndex(searchRecords);
       await search.ensureSearchRuntime();
       await search.buildSearchPage(Layout);
+      logLine(`✓ Search index: ${searchRecords.length} records\n`, 'cyan');
     }
   } catch (_) {}
 }
@@ -139,4 +146,3 @@ if (require.main === module) {
     process.exit(1);
   });
 }
-
