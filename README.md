@@ -27,6 +27,36 @@ Build output goes to `site/`. Development cache lives in `.cache/`:
 - `.cache/mdx`: transient compiled MDX modules
 - `.cache/iiif`: cached IIIF `collection.json`, `manifest-index.json`, and `manifests/{slug}.json`
 
+## Search Page (MDX Composition)
+
+Compose the search UI with MDX at `content/search/_layout.mdx`. The builder injects a `search` prop so you can place the primitives anywhere:
+
+- `props.search.form`: search input (`<input id="search-input" />`).
+- `props.search.results`: results container (`<ul id="search-results"></ul>`).
+- `props.search.count`: live count of shown results (`<span id="search-count"></span>`).
+- `props.search.summary`: live summary text (`<div id="search-summary"></div>`), e.g., “Found X of N for “query””.
+
+Example:
+
+```
+# Search
+
+<div className="search-grid">
+  <aside>
+    <strong>Results:</strong> {props.search.count}
+    <div>{props.search.summary}</div>
+  </aside>
+  <section>
+    {props.search.form}
+    {props.search.results}
+  </section>
+</div>
+```
+
+Notes:
+- If `content/search/_layout.mdx` is absent, a minimal fallback page is generated.
+- Client behavior is provided by `site/search.js`, which wires the input and updates count/summary.
+
 ## Deploy to GitHub Pages
 - Workflow: `.github/workflows/deploy-pages.yml` builds `site/` and deploys to Pages.
 - Enable Pages: in repository Settings → Pages → set Source to "GitHub Actions" (or use the workflow’s automatic enablement if allowed).

@@ -22,6 +22,9 @@ async function ensureSearchRuntime() {
       const $ = (sel) => document.querySelector(sel);
       const input = $('#search-input');
       const list = $('#search-results');
+      const countEl = $('#search-count');
+      const summaryEl = $('#search-summary');
+      let currentQuery = '';
       function render(ids) {
         if (!list) return;
         const html = (ids || []).map((i) => {
@@ -33,11 +36,23 @@ async function ensureSearchRuntime() {
           var href = (pref ? pref : '') + '/' + r.href;
           return '<li><a href="' + href + '">' + esc(r.title || r.href) + '</a></li>';
         }).join('');
+        const shown = (ids || []).length;
         list.innerHTML = html || '<li><em>No results</em></li>';
+        if (countEl) countEl.textContent = String(shown);
+        if (summaryEl) {
+          const esc = (s) => String(s||'').replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+          const total = data.length;
+          if (currentQuery) {
+            summaryEl.innerHTML = 'Found <strong>' + shown + '</strong> of ' + total + ' for \u201C' + esc(currentQuery) + '\u201D';
+          } else {
+            summaryEl.innerHTML = 'Showing <strong>' + shown + '</strong> of ' + total + ' items';
+          }
+        }
       }
       function showAll() { render(data.map((_, i) => i)); }
       function search(q) {
-        if (!q) { showAll(); return; }
+        if (!q) { currentQuery=''; showAll(); return; }
+        currentQuery = q;
         const ids = index.search(q, { limit: 200 });
         render(Array.isArray(ids) ? ids : []);
       }
@@ -69,14 +84,39 @@ async function buildSearchPage() {
   try {
     const outPath = path.join(OUT_DIR, 'search.html');
     ensureDirSync(path.dirname(outPath));
-    const content = React.createElement(
-      'div',
-      { className: 'search' },
-      React.createElement('h1', null, 'Search'),
-      React.createElement('p', null, 'Search the collection by title.'),
-      React.createElement('input', { id: 'search-input', type: 'search', placeholder: 'Type to search…', style: { width: '100%', padding: '0.5rem' } }),
-      React.createElement('ul', { id: 'search-results' })
-    );
+    // Provide composable primitives for MDX layout: form + results
+    const formEl = React.createElement('input', {
+      id: 'search-input',
+      type: 'search',
+      placeholder: 'Type to search…',
+      style: { width: '100%', padding: '0.5rem' },
+    });
+    const resultsEl = React.createElement('ul', { id: 'search-results' });
+    const countEl = React.createElement('span', { id: 'search-count' });
+    const summaryEl = React.createElement('div', { id: 'search-summary' });
+
+    // If a custom layout exists at content/search/_layout.mdx, render it
+    const { CONTENT_DIR } = require('./common');
+    const layoutPath = path.join(CONTENT_DIR, 'search', '_layout.mdx');
+    let content = null;
+    if (require('fs').existsSync(layoutPath)) {
+      const { compileMdxToComponent } = require('./mdx');
+      const Layout = await compileMdxToComponent(layoutPath);
+      content = React.createElement(Layout, { search: { form: formEl, results: resultsEl, count: countEl, summary: summaryEl } });
+    } else {
+      // Fallback to a minimal hardcoded page
+      content = React.createElement(
+        'div',
+        { className: 'search' },
+        React.createElement('h1', null, 'Search'),
+        React.createElement('p', null, 'Search the collection by title.'),
+        formEl,
+        React.createElement('p', null, 'Results: ', countEl),
+        summaryEl,
+        resultsEl
+      );
+    }
+
     // Wrap the page with MDXProvider so anchors in custom MDX Layout get base path
     let MDXProvider = null;
     try { const mod = await import('@mdx-js/react'); MDXProvider = mod.MDXProvider || mod.default || null; } catch (_) { MDXProvider = null; }
@@ -88,8 +128,7 @@ async function buildSearchPage() {
     const compMap = { a: Anchor };
     const { loadAppWrapper } = require('./mdx');
     const app = await loadAppWrapper();
-    const inner = app && app.App ? content : content;
-    const wrappedApp = app && app.App ? React.createElement(app.App, null, inner) : inner;
+    const wrappedApp = app && app.App ? React.createElement(app.App, null, content) : content;
     const page = MDXProvider ? React.createElement(MDXProvider, { components: compMap }, wrappedApp) : wrappedApp;
     const body = ReactDOMServer.renderToStaticMarkup(page);
     const head = app && app.Head ? ReactDOMServer.renderToStaticMarkup(React.createElement(app.Head)) : '';
