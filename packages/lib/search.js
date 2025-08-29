@@ -9,6 +9,7 @@ async function ensureSearchRuntime() {
     try { esbuild = require('esbuild'); } catch (_) {}
   }
   if (!esbuild) return;
+  const { BASE_PATH } = require('./common');
   const entry = `
     import FlexSearch from 'flexsearch';
     async function boot() {
@@ -27,7 +28,10 @@ async function ensureSearchRuntime() {
           const r = idToRec.get(i);
           if (!r) return '';
           const esc = (s) => String(s||'').replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
-          return '<li><a href="/' + r.href + '">' + esc(r.title || r.href) + '</a></li>';
+          var base = ${JSON.stringify(BASE_PATH)};
+          var pref = base ? base : '';
+          var href = (pref ? pref : '') + '/' + r.href;
+          return '<li><a href="' + href + '">' + esc(r.title || r.href) + '</a></li>';
         }).join('');
         list.innerHTML = html || '<li><em>No results</em></li>';
       }
@@ -95,4 +99,3 @@ module.exports = {
   buildSearchPage,
   writeSearchIndex,
 };
-

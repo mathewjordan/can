@@ -354,11 +354,14 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
         try {
           // Provide MDX components mapping so tags like <Viewer/> and <HelloWorld/> resolve
           let components = {};
-          try {
-            components = await import("@canopy-iiif/ui");
-          } catch (_) {
-            components = {};
-          }
+          try { components = await import('@canopy-iiif/ui'); } catch (_) { components = {}; }
+          const { withBase } = require('./common');
+          const Anchor = function A(props) {
+            let { href = '', ...rest } = props || {};
+            href = withBase(href);
+            return React.createElement('a', { href, ...rest }, props.children);
+          };
+          const compMap = { ...components, a: Anchor };
           // Gracefully handle HelloWorld if not provided anywhere
           if (!components.HelloWorld) {
             components.HelloWorld = components.Fallback
@@ -379,7 +382,7 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
 
           const mdxContent = React.createElement(WorksLayout, { manifest });
           const content = MDXProvider
-            ? React.createElement(MDXProvider, { components }, mdxContent)
+            ? React.createElement(MDXProvider, { components: compMap }, mdxContent)
             : mdxContent;
           const page = React.createElement(SiteLayout, {}, content);
           const body = ReactDOMServer.renderToStaticMarkup(page);

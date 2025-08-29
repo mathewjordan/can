@@ -7,6 +7,8 @@ const OUT_DIR = path.resolve('site');
 const CACHE_DIR = path.resolve('.cache/mdx');
 const ASSETS_DIR = path.resolve('assets');
 
+const BASE_PATH = String(process.env.CANOPY_BASE_PATH || '').replace(/\/$/, '');
+
 function ensureDirSync(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
@@ -23,6 +25,13 @@ function htmlShell({ title, body, cssHref, scriptHref }) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${title}</title><link rel="stylesheet" href="${cssHref}">${scriptTag}</head><body>${body}</body></html>`;
 }
 
+function withBase(href) {
+  if (!href) return href;
+  if (!BASE_PATH) return href;
+  if (typeof href === 'string' && href.startsWith('/')) return `${BASE_PATH}${href}`;
+  return href;
+}
+
 module.exports = {
   fs,
   fsp,
@@ -31,8 +40,9 @@ module.exports = {
   OUT_DIR,
   CACHE_DIR,
   ASSETS_DIR,
+  BASE_PATH,
   ensureDirSync,
   cleanDir,
   htmlShell,
+  withBase,
 };
-

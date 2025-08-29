@@ -9,6 +9,7 @@ const {
   OUT_DIR,
   CACHE_DIR,
   ensureDirSync,
+  withBase,
 } = require('./common');
 
 // ESM-only in v3; load dynamically from CJS
@@ -76,11 +77,17 @@ async function compileMdxFile(filePath, outPath, Layout, extraProps = {}) {
   const MDXContent = mod.default || mod.MDXContent || mod;
   const components = await loadUiComponents();
   const MDXProvider = await getMdxProvider();
-  const content = React.createElement(MDXContent, extraProps);
-  const wrapped = MDXProvider
-    ? React.createElement(MDXProvider, { components }, content)
-    : content;
-  const page = React.createElement(Layout, {}, wrapped);
+  // Base path support for anchors
+  const Anchor = function A(props) {
+    let { href = '', ...rest } = props || {};
+    href = withBase(href);
+    return React.createElement('a', { href, ...rest }, props.children);
+  };
+  const compMap = { ...components, a: Anchor };
+  const tree = React.createElement(Layout, {}, React.createElement(MDXContent, extraProps));
+  const page = MDXProvider
+    ? React.createElement(MDXProvider, { components: compMap }, tree)
+    : tree;
   const body = ReactDOMServer.renderToStaticMarkup(page);
   return body;
 }

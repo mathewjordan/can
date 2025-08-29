@@ -41,6 +41,15 @@ jobs:
           # Explicit token (defaults to GITHUB_TOKEN but we pass it for clarity)
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Determine base path for Pages
+        run: |
+          REPO_NAME="${GITHUB_REPOSITORY#*/}"
+          if [[ "$REPO_NAME" == *.github.io ]]; then
+            echo "CANOPY_BASE_PATH=" >> $GITHUB_ENV
+          else
+            echo "CANOPY_BASE_PATH=/$REPO_NAME" >> $GITHUB_ENV
+          fi
+
       - name: Build site
         env:
           # Optional: tune IIIF build performance in CI
