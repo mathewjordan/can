@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -35,6 +35,11 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@v5
+        with:
+          # Enable the Pages site if it has not been created yet
+          enablement: true
+          # Explicit token (defaults to GITHUB_TOKEN but we pass it for clarity)
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build site
         env:
@@ -65,3 +70,37 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+      - name: Checkout repository for README update
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Update README with Pages URL
+        env:
+          PAGES_URL: ${{ steps.deployment.outputs.page_url }}
+        run: |
+          set -e
+          if [ -z "$PAGES_URL" ]; then
+            echo "No page_url available; skipping README update"; exit 0; fi
+          TMP=$(mktemp)
+          START='<!-- PAGES_URL_START -->'
+          END='<!-- PAGES_URL_END -->'
+          if grep -q "$START" README.md && grep -q "$END" README.md; then
+            awk -v url="$PAGES_URL" -v start="$START" -v end="$END" '
+              BEGIN{p=1}
+              index($0,start){print; print "Live: " url; p=0; next}
+              index($0,end){p=1}
+              p {print}
+            ' README.md > "$TMP"
+            mv "$TMP" README.md
+          else
+            printf "\n%s\nLive: %s\n%s\n" "$START" "$PAGES_URL" "$END" >> README.md
+          fi
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          if git diff --quiet -- README.md; then
+            echo "README unchanged"; exit 0; fi
+          git add README.md
+          git commit -m "docs: update Pages URL [skip ci]"
+          git push

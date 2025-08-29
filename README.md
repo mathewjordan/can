@@ -1,5 +1,7 @@
 # Canopy IIIF App
 
+[![Deploy to GitHub Pages](https://github.com/mathewjordan/can/actions/workflows/deploy-pages.yml/badge.svg)](https://github.com/mathewjordan/can/actions/workflows/deploy-pages.yml)
+
 Static site generator powered by MDX and IIIF. Use `@canopy-iiif/lib` to build content from `content/` and generate HTML in `site/`.
 
 ## Quick Start
@@ -24,6 +26,21 @@ content/
 Build output goes to `site/`. Development cache lives in `.cache/`:
 - `.cache/mdx`: transient compiled MDX modules
 - `.cache/iiif`: cached IIIF `collection.json`, `manifest-index.json`, and `manifests/{slug}.json`
+
+## Deploy to GitHub Pages
+- Workflow: `.github/workflows/deploy-pages.yml` builds `site/` and deploys to Pages.
+- Enable Pages: in repository Settings → Pages → set Source to "GitHub Actions" (or use the workflow’s automatic enablement if allowed).
+- Trigger: pushes to `main` (or run manually via Actions → "Deploy to GitHub Pages").
+- Output: the workflow uploads the `site/` folder as the Pages artifact and deploys it.
+- Live site URL:
+
+<!-- PAGES_URL_START -->
+_The Pages URL will appear here after the first successful deployment._
+<!-- PAGES_URL_END -->
+- CI tuning (optional):
+  - `canopy.yml` → `iiif.chunkSize`, `iiif.concurrency` to control fetch/build parallelism.
+  - Env overrides (in workflow): `CANOPY_CHUNK_SIZE`, `CANOPY_FETCH_CONCURRENCY`, and `CANOPY_COLLECTION_URI` (use a small collection for faster CI).
+- Project Pages base path: links currently use absolute `/…`. If deploying under `/<repo>` you may want base‑path aware links; open an issue if you want this wired in.
 
 ## Contributing
 See `CONTRIBUTING.md` for repository structure, versioning with Changesets, release flow, and the template-branch workflow.
