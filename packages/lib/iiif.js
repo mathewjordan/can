@@ -93,22 +93,19 @@ async function loadManifestIndex() {
   try {
     if (fs.existsSync(IIIF_CACHE_INDEX)) {
       const idx = await readJson(IIIF_CACHE_INDEX);
-      return idx && typeof idx === "object"
-        ? idx
-        : { byId: {}, collection: null };
+      if (idx && typeof idx === 'object') {
+        return { byId: idx.byId || {}, collection: idx.collection || null, parents: idx.parents || {} };
+      }
     }
   } catch (_) {}
-  return { byId: {}, collection: null };
+  return { byId: {}, collection: null, parents: {} };
 }
 
 async function saveManifestIndex(index) {
   try {
     ensureDirSync(IIIF_CACHE_DIR);
-    await fsp.writeFile(
-      IIIF_CACHE_INDEX,
-      JSON.stringify(index, null, 2),
-      "utf8"
-    );
+    const out = { byId: index.byId || {}, collection: index.collection || null, parents: index.parents || {} };
+    await fsp.writeFile(IIIF_CACHE_INDEX, JSON.stringify(out, null, 2), 'utf8');
   } catch (_) {}
 }
 
@@ -248,18 +245,46 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
 
   const WorksLayout = await mdx.compileMdxToComponent(worksLayoutPath);
   const SiteLayout = Layout;
-  const items = Array.isArray(collection.items) ? collection.items : [];
+  // Recursively collect manifests across subcollections
+  const tasks = [];
+  async function collectTasksFromCollection(colObj, parentUri, visited) {
+    if (!colObj) return;
+    const colId = colObj.id || colObj['@id'] || parentUri || '';
+    visited = visited || new Set();
+    if (colId) {
+      if (visited.has(colId)) return;
+      visited.add(colId);
+    }
+    const items = Array.isArray(colObj.items) ? colObj.items : [];
+    for (const it of items) {
+      if (!it) continue;
+      const t = String(it.type || it['@type'] || '');
+      const id = it.id || it['@id'] || '';
+      if (t.includes('Manifest')) {
+        tasks.push({ id: String(id), parent: String(colId || parentUri || '') });
+      } else if (t.includes('Collection')) {
+        const sub = await readJsonFromUri(String(id));
+        const subNorm = await normalizeToV3(sub);
+        await collectTasksFromCollection(subNorm, String(id), visited);
+      } else if (/^https?:\/\//i.test(String(id || ''))) {
+        const fetched = await readJsonFromUri(String(id));
+        const norm = await normalizeToV3(fetched);
+        const nt = String((norm && (norm.type || norm['@type'])) || '');
+        if (nt.includes('Collection')) {
+          await collectTasksFromCollection(norm, String(id), visited);
+        } else if (nt.includes('Manifest')) {
+          tasks.push({ id: String(id), parent: String(colId || parentUri || '') });
+        }
+      }
+    }
+  }
+  await collectTasksFromCollection(collection, String(collection.id || collection['@id'] || collectionUri || ''), new Set());
   const chunkSize = Math.max(1, Number(process.env.CANOPY_CHUNK_SIZE || (CONFIG.iiif && CONFIG.iiif.chunkSize) || 10));
-  const chunks = Math.max(1, Math.ceil(items.length / chunkSize));
-  try {
-    logLine(
-      `Aggregating ${items.length} Manifest(s) in ${chunks} chunk(s)...\n`,
-      "cyan"
-    );
-  } catch (_) {}
+  const chunks = Math.max(1, Math.ceil(tasks.length / chunkSize));
+  try { logLine(`Aggregating ${tasks.length} Manifest(s) in ${chunks} chunk(s)...\n`, 'cyan'); } catch (_) {}
   const searchRecords = [];
   for (let ci = 0; ci < chunks; ci++) {
-    const chunk = items.slice(ci * chunkSize, (ci + 1) * chunkSize);
+    const chunk = tasks.slice(ci * chunkSize, (ci + 1) * chunkSize);
     try {
       logLine(`\nChunk (${ci + 1}/${chunks})\n`, "magenta");
     } catch (_) {}
