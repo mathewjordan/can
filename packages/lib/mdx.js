@@ -48,6 +48,28 @@ function isReservedFile(p) {
   return base.startsWith('_');
 }
 
+let APP_WRAPPER = null; // { App, Head } or null
+async function loadAppWrapper() {
+  if (APP_WRAPPER !== null) return APP_WRAPPER;
+  const appPath = path.join(CONTENT_DIR, '_app.mdx');
+  if (!fs.existsSync(appPath)) {
+    APP_WRAPPER = null;
+    return null;
+  }
+  const { compile } = await import('@mdx-js/mdx');
+  const source = await fsp.readFile(appPath, 'utf8');
+  const compiled = await compile(source, { jsx: false, development: false, providerImportSource: '@mdx-js/react', jsxImportSource: 'react', format: 'mdx' });
+  const code = String(compiled);
+  ensureDirSync(CACHE_DIR);
+  const tmpFile = path.join(CACHE_DIR, '_app.mjs');
+  await fsp.writeFile(tmpFile, code, 'utf8');
+  const mod = await import(pathToFileURL(tmpFile).href + `?v=${Date.now()}`);
+  const App = mod.default || mod.App || null;
+  const Head = mod.Head || null;
+  APP_WRAPPER = { App, Head };
+  return APP_WRAPPER;
+}
+
 async function compileMdxFile(filePath, outPath, Layout, extraProps = {}) {
   const { compile } = await import('@mdx-js/mdx');
   const source = await fsp.readFile(filePath, 'utf8');
@@ -84,12 +106,13 @@ async function compileMdxFile(filePath, outPath, Layout, extraProps = {}) {
     return React.createElement('a', { href, ...rest }, props.children);
   };
   const compMap = { ...components, a: Anchor };
-  const tree = React.createElement(Layout, {}, React.createElement(MDXContent, extraProps));
-  const page = MDXProvider
-    ? React.createElement(MDXProvider, { components: compMap }, tree)
-    : tree;
+  const app = await loadAppWrapper();
+  const inner = React.createElement(Layout, {}, React.createElement(MDXContent, extraProps));
+  const wrapped = app && app.App ? React.createElement(app.App, null, inner) : inner;
+  const page = MDXProvider ? React.createElement(MDXProvider, { components: compMap }, wrapped) : wrapped;
   const body = ReactDOMServer.renderToStaticMarkup(page);
-  return body;
+  const head = app && app.Head ? ReactDOMServer.renderToStaticMarkup(React.createElement(app.Head)) : '';
+  return { body, head };
 }
 
 async function compileMdxToComponent(filePath) {
@@ -194,5 +217,6 @@ module.exports = {
   compileMdxFile,
   compileMdxToComponent,
   loadCustomLayout,
+  loadAppWrapper,
   ensureClientRuntime,
 };

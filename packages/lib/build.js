@@ -28,13 +28,13 @@ async function ensureStyles() {
 async function compileMdxFile(filePath, outPath, extraProps = {}) {
   const source = await fsp.readFile(filePath, 'utf8');
   const title = mdx.extractTitle(source);
-  const body = await mdx.compileMdxFile(filePath, outPath, Layout, extraProps);
+  const { body, head } = await mdx.compileMdxFile(filePath, outPath, Layout, extraProps);
   const cssRel = path.relative(path.dirname(outPath), path.join(OUT_DIR, 'styles.css')).split(path.sep).join('/');
   const needsHydrate = body.includes('data-canopy-hydrate') || body.includes('data-canopy-viewer');
   const jsRel = needsHydrate
     ? path.relative(path.dirname(outPath), path.join(OUT_DIR, 'canopy-viewer.js')).split(path.sep).join('/')
     : null;
-  return htmlShell({ title, body, cssHref: cssRel || 'styles.css', scriptHref: jsRel });
+  return htmlShell({ title, body, cssHref: cssRel || 'styles.css', scriptHref: jsRel, headExtra: head });
 }
 
 async function processEntry(absPath) {

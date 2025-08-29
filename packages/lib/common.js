@@ -20,9 +20,10 @@ async function cleanDir(dir) {
   await fsp.mkdir(dir, { recursive: true });
 }
 
-function htmlShell({ title, body, cssHref, scriptHref }) {
+function htmlShell({ title, body, cssHref, scriptHref, headExtra }) {
   const scriptTag = scriptHref ? `<script defer src="${scriptHref}"></script>` : '';
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${title}</title><link rel="stylesheet" href="${cssHref}">${scriptTag}</head><body>${body}</body></html>`;
+  const extra = headExtra ? String(headExtra) : '';
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/><title>${title}</title>${extra}<link rel="stylesheet" href="${cssHref}">${scriptTag}</head><body>${body}</body></html>`;
 }
 
 function withBase(href) {

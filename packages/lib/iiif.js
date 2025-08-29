@@ -379,13 +379,17 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
           } catch (_) {
             MDXProvider = null;
           }
+          const { loadAppWrapper } = require('./mdx');
+          const app = await loadAppWrapper();
 
           const mdxContent = React.createElement(WorksLayout, { manifest });
-          const inner = React.createElement(SiteLayout, {}, mdxContent);
+          const siteTree = React.createElement(SiteLayout, {}, mdxContent);
+          const wrappedApp = app && app.App ? React.createElement(app.App, null, siteTree) : siteTree;
           const page = MDXProvider
-            ? React.createElement(MDXProvider, { components: compMap }, inner)
-            : inner;
+            ? React.createElement(MDXProvider, { components: compMap }, wrappedApp)
+            : wrappedApp;
           const body = ReactDOMServer.renderToStaticMarkup(page);
+          const head = app && app.Head ? ReactDOMServer.renderToStaticMarkup(React.createElement(app.Head)) : '';
           const cssRel = path
             .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
             .split(path.sep)
@@ -407,6 +411,7 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
             body,
             cssHref: cssRel || "styles.css",
             scriptHref: jsRel,
+            headExtra: head,
           });
           await fsp.writeFile(outPath, html, "utf8");
           lns.push([`✓ Created ${path.relative(process.cwd(), outPath)}`, 'green']);

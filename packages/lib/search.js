@@ -86,12 +86,16 @@ async function buildSearchPage(Layout) {
       return React.createElement('a', { href, ...rest }, props.children);
     };
     const compMap = { a: Anchor };
+    const { loadAppWrapper } = require('./mdx');
+    const app = await loadAppWrapper();
     const inner = React.createElement(Layout, {}, content);
-    const page = MDXProvider ? React.createElement(MDXProvider, { components: compMap }, inner) : inner;
+    const wrappedApp = app && app.App ? React.createElement(app.App, null, inner) : inner;
+    const page = MDXProvider ? React.createElement(MDXProvider, { components: compMap }, wrappedApp) : wrappedApp;
     const body = ReactDOMServer.renderToStaticMarkup(page);
+    const head = app && app.Head ? ReactDOMServer.renderToStaticMarkup(React.createElement(app.Head)) : '';
     const cssRel = path.relative(path.dirname(outPath), path.join(OUT_DIR, 'styles.css')).split(path.sep).join('/');
     const jsRel = path.relative(path.dirname(outPath), path.join(OUT_DIR, 'search.js')).split(path.sep).join('/');
-    const html = htmlShell({ title: 'Search', body, cssHref: cssRel || 'styles.css', scriptHref: jsRel || 'search.js' });
+    const html = htmlShell({ title: 'Search', body, cssHref: cssRel || 'styles.css', scriptHref: jsRel || 'search.js', headExtra: head });
     await fsp.writeFile(outPath, html, 'utf8');
     console.log('Search: Built', path.relative(process.cwd(), outPath));
   } catch (e) {
