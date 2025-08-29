@@ -164,6 +164,7 @@ async function loadConfig() {
     collection: {
       uri: "https://iiif.io/api/cookbook/recipe/0032-collection/collection.json",
     },
+    iiif: { chunkSize: 10, concurrency: 6 },
   };
   const overrideConfigPath = process.env.CANOPY_CONFIG;
   const configPath = path.resolve(overrideConfigPath || "canopy.yml");
@@ -176,6 +177,10 @@ async function loadConfig() {
           uri:
             (data.collection && data.collection.uri) || CONFIG.collection.uri,
         },
+        iiif: {
+          chunkSize: Number((data.iiif && data.iiif.chunkSize) || CONFIG.iiif.chunkSize) || CONFIG.iiif.chunkSize,
+          concurrency: Number((data.iiif && data.iiif.concurrency) || CONFIG.iiif.concurrency) || CONFIG.iiif.concurrency,
+        }
       };
       console.log(
         "Loaded config from",
@@ -244,7 +249,7 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
   const WorksLayout = await mdx.compileMdxToComponent(worksLayoutPath);
   const SiteLayout = Layout;
   const items = Array.isArray(collection.items) ? collection.items : [];
-  const chunkSize = 10;
+  const chunkSize = Math.max(1, Number(process.env.CANOPY_CHUNK_SIZE || (CONFIG.iiif && CONFIG.iiif.chunkSize) || 10));
   const chunks = Math.max(1, Math.ceil(items.length / chunkSize));
   try {
     logLine(
@@ -258,135 +263,139 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
     try {
       logLine(`\nChunk (${ci + 1}/${chunks})\n`, "magenta");
     } catch (_) {}
-    for (const it of chunk) {
-      if (!it) continue;
-      const id = it.id || it["@id"] || "";
-      let manifest = await loadCachedManifestById(id);
-      // Logging: cached or fetched
-      if (manifest) {
-        try {
-          log("✓ ", "yellow", { dim: true });
-          log(String(id), "yellow");
-          log(" ➜ Cached\n", "yellow", { dim: true });
-        } catch (_) {}
-      } else if (/^https?:\/\//i.test(String(id || ""))) {
-        try {
-          const res = await fetch(String(id), {
-            headers: { Accept: "application/json" },
-          }).catch(() => null);
-          if (res && res.ok) {
-            try {
-              logResponse(String(id), res, true);
-            } catch (_) {}
-            const remote = await res.json();
-            const norm = await normalizeToV3(remote);
-            manifest = norm;
-            await saveCachedManifest(manifest, String(id));
-          } else {
-            try {
-              logResponse(String(id), res || { status: "ERR" }, false);
-            } catch (_) {}
+    const concurrency = Math.max(1, Number(process.env.CANOPY_FETCH_CONCURRENCY || (CONFIG.iiif && CONFIG.iiif.concurrency) || 6));
+    let next = 0;
+    const logs = new Array(chunk.length);
+    let nextPrint = 0;
+    function tryFlush() {
+      try {
+        while (nextPrint < logs.length && logs[nextPrint]) {
+          const lines = logs[nextPrint];
+          for (const [txt, color, opts] of lines) {
+            try { logLine(txt, color, opts); } catch (_) {}
+          }
+          logs[nextPrint] = null;
+          nextPrint++;
+        }
+      } catch (_) {}
+    }
+    async function worker() {
+      for (;;) {
+        const it = chunk[next++];
+        if (!it) break;
+        const idx = next - 1;
+        const id = it.id || it["@id"] || "";
+        let manifest = await loadCachedManifestById(id);
+        // Buffer logs for ordered output
+        const lns = [];
+        // Logging: cached or fetched
+        if (manifest) {
+          lns.push([`✓ ${String(id)} ➜ Cached`, 'yellow']);
+        } else if (/^https?:\/\//i.test(String(id || ""))) {
+          try {
+            const res = await fetch(String(id), {
+              headers: { Accept: "application/json" },
+            }).catch(() => null);
+            if (res && res.ok) {
+              lns.push([`✓ ${String(id)} ➜ ${res.status}`, 'yellow']);
+              const remote = await res.json();
+              const norm = await normalizeToV3(remote);
+              manifest = norm;
+              await saveCachedManifest(manifest, String(id));
+            } else {
+              lns.push([`✗ ${String(id)} ➜ ${res ? res.status : 'ERR'}`, 'red']);
+              continue;
+            }
+          } catch (e) {
+            lns.push([`✗ ${String(id)} ➜ ERR`, 'red']);
             continue;
           }
-        } catch (e) {
-          try {
-            logResponse(String(id), { status: "ERR" }, false);
-          } catch (_) {}
+        } else {
+          // Non-http id; skip with error log
+          lns.push([`✗ ${String(id)} ➜ SKIP`, 'red']);
           continue;
         }
-      } else {
-        // Non-http id; skip with error log
+        if (!manifest) continue;
+        manifest = await normalizeToV3(manifest);
+        const title = firstLabelString(manifest.label);
+        const slug = slugify(title || "untitled", {
+          lower: true,
+          strict: true,
+          trim: true,
+        });
+        const href = path.join("works", slug + ".html");
+        const outPath = path.join(OUT_DIR, href);
+        ensureDirSync(path.dirname(outPath));
         try {
-          logResponse(String(id), { status: "SKIP" }, false);
-        } catch (_) {}
-        continue;
-      }
-      if (!manifest) {
-        console.warn("IIIF: Could not resolve manifest for item id:", id);
-        continue;
-      }
-      manifest = await normalizeToV3(manifest);
-      const title = firstLabelString(manifest.label);
-      const slug = slugify(title || "untitled", {
-        lower: true,
-        strict: true,
-        trim: true,
-      });
-      const href = path.join("works", slug + ".html");
-      const outPath = path.join(OUT_DIR, href);
-      ensureDirSync(path.dirname(outPath));
-      try {
-        // Provide MDX components mapping so tags like <Viewer/> and <HelloWorld/> resolve
-        let components = {};
-        try {
-          components = await import("@canopy-iiif/ui");
-        } catch (_) {
-          components = {};
-        }
-        // Gracefully handle HelloWorld if not provided anywhere
-        if (!components.HelloWorld) {
-          components.HelloWorld = components.Fallback
-            ? (props) =>
-                React.createElement(components.Fallback, {
-                  name: "HelloWorld",
-                  ...props,
-                })
-            : () => null;
-        }
-        let MDXProvider = null;
-        try {
-          const mod = await import("@mdx-js/react");
-          MDXProvider = mod.MDXProvider || mod.default || null;
-        } catch (_) {
-          MDXProvider = null;
-        }
+          // Provide MDX components mapping so tags like <Viewer/> and <HelloWorld/> resolve
+          let components = {};
+          try {
+            components = await import("@canopy-iiif/ui");
+          } catch (_) {
+            components = {};
+          }
+          // Gracefully handle HelloWorld if not provided anywhere
+          if (!components.HelloWorld) {
+            components.HelloWorld = components.Fallback
+              ? (props) =>
+                  React.createElement(components.Fallback, {
+                    name: "HelloWorld",
+                    ...props,
+                  })
+              : () => null;
+          }
+          let MDXProvider = null;
+          try {
+            const mod = await import("@mdx-js/react");
+            MDXProvider = mod.MDXProvider || mod.default || null;
+          } catch (_) {
+            MDXProvider = null;
+          }
 
-        const mdxContent = React.createElement(WorksLayout, { manifest });
-        const content = MDXProvider
-          ? React.createElement(MDXProvider, { components }, mdxContent)
-          : mdxContent;
-        const page = React.createElement(SiteLayout, {}, content);
-        const body = ReactDOMServer.renderToStaticMarkup(page);
-        const cssRel = path
-          .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
-          .split(path.sep)
-          .join("/");
-        const needsHydrate =
-          body.includes("data-canopy-hydrate") ||
-          body.includes("data-canopy-viewer");
-        const jsRel = needsHydrate
-          ? path
-              .relative(
-                path.dirname(outPath),
-                path.join(OUT_DIR, "canopy-viewer.js")
-              )
-              .split(path.sep)
-              .join("/")
-          : null;
-        const html = htmlShell({
-          title,
-          body,
-          cssHref: cssRel || "styles.css",
-          scriptHref: jsRel,
-        });
-        await fsp.writeFile(outPath, html, "utf8");
-        try {
-          log(`✓ Created ${path.relative(process.cwd(), outPath)}\n`, "green");
-        } catch (_) {}
-        searchRecords.push({
-          id: String(manifest.id || id),
-          title,
-          href: href.split(path.sep).join("/"),
-        });
-      } catch (e) {
-        try {
-          log(
-            `IIIF: failed to render for ${id || "<unknown>"} — ${e.message}\n`,
-            "red"
-          );
-        } catch (_) {}
+          const mdxContent = React.createElement(WorksLayout, { manifest });
+          const content = MDXProvider
+            ? React.createElement(MDXProvider, { components }, mdxContent)
+            : mdxContent;
+          const page = React.createElement(SiteLayout, {}, content);
+          const body = ReactDOMServer.renderToStaticMarkup(page);
+          const cssRel = path
+            .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
+            .split(path.sep)
+            .join("/");
+          const needsHydrate =
+            body.includes("data-canopy-hydrate") ||
+            body.includes("data-canopy-viewer");
+          const jsRel = needsHydrate
+            ? path
+                .relative(
+                  path.dirname(outPath),
+                  path.join(OUT_DIR, "canopy-viewer.js")
+                )
+                .split(path.sep)
+                .join("/")
+            : null;
+          const html = htmlShell({
+            title,
+            body,
+            cssHref: cssRel || "styles.css",
+            scriptHref: jsRel,
+          });
+          await fsp.writeFile(outPath, html, "utf8");
+          lns.push([`✓ Created ${path.relative(process.cwd(), outPath)}`, 'green']);
+          searchRecords.push({
+            id: String(manifest.id || id),
+            title,
+            href: href.split(path.sep).join("/"),
+          });
+        } catch (e) {
+          lns.push([`IIIF: failed to render for ${id || '<unknown>'} — ${e.message}`, 'red']);
+        }
+        logs[idx] = lns;
+        tryFlush();
       }
     }
+    const workers = Array.from({ length: Math.min(concurrency, chunk.length) }, () => worker());
+    await Promise.all(workers);
   }
   return { searchRecords };
 }
