@@ -1,6 +1,6 @@
 const React = require('react');
 const ReactDOMServer = require('react-dom/server');
-const { path } = require('./common');
+const { path, withBase } = require('./common');
 const { ensureDirSync, OUT_DIR, htmlShell, fsp } = require('./common');
 
 async function ensureSearchRuntime() {
@@ -77,7 +77,17 @@ async function buildSearchPage(Layout) {
       React.createElement('input', { id: 'search-input', type: 'search', placeholder: 'Type to search…', style: { width: '100%', padding: '0.5rem' } }),
       React.createElement('ul', { id: 'search-results' })
     );
-    const page = React.createElement(Layout, {}, content);
+    // Wrap the page with MDXProvider so anchors in custom MDX Layout get base path
+    let MDXProvider = null;
+    try { const mod = await import('@mdx-js/react'); MDXProvider = mod.MDXProvider || mod.default || null; } catch (_) { MDXProvider = null; }
+    const Anchor = function A(props) {
+      let { href = '', ...rest } = props || {};
+      href = withBase(href);
+      return React.createElement('a', { href, ...rest }, props.children);
+    };
+    const compMap = { a: Anchor };
+    const inner = React.createElement(Layout, {}, content);
+    const page = MDXProvider ? React.createElement(MDXProvider, { components: compMap }, inner) : inner;
     const body = ReactDOMServer.renderToStaticMarkup(page);
     const cssRel = path.relative(path.dirname(outPath), path.join(OUT_DIR, 'styles.css')).split(path.sep).join('/');
     const jsRel = path.relative(path.dirname(outPath), path.join(OUT_DIR, 'search.js')).split(path.sep).join('/');

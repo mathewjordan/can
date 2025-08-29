@@ -381,10 +381,10 @@ async function buildIiifCollectionPages(CONFIG, Layout) {
           }
 
           const mdxContent = React.createElement(WorksLayout, { manifest });
-          const content = MDXProvider
-            ? React.createElement(MDXProvider, { components: compMap }, mdxContent)
-            : mdxContent;
-          const page = React.createElement(SiteLayout, {}, content);
+          const inner = React.createElement(SiteLayout, {}, mdxContent);
+          const page = MDXProvider
+            ? React.createElement(MDXProvider, { components: compMap }, inner)
+            : inner;
           const body = ReactDOMServer.renderToStaticMarkup(page);
           const cssRel = path
             .relative(path.dirname(outPath), path.join(OUT_DIR, "styles.css"))
