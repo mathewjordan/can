@@ -35,7 +35,7 @@ Build output goes to `site/`. Development cache lives in `.cache/`:
 - Live site URL:
 
 <!-- PAGES_URL_START -->
-_The Pages URL will appear here after the first successful deployment._
+Live: https://mathewjordan.github.io/can/
 <!-- PAGES_URL_END -->
 - CI tuning (optional):
   - `canopy.yml` → `iiif.chunkSize`, `iiif.concurrency` to control fetch/build parallelism.
