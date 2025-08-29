@@ -11,6 +11,20 @@ const {
   ensureDirSync,
   withBase,
 } = require('./common');
+const yaml = require('js-yaml');
+
+function parseFrontmatter(src) {
+  let input = String(src || '');
+  // Strip UTF-8 BOM if present
+  if (input.charCodeAt(0) === 0xfeff) input = input.slice(1);
+  // Allow a few leading blank lines before frontmatter
+  const m = input.match(/^(?:\s*\r?\n)*---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?/);
+  if (!m) return { data: null, content: input };
+  let data = null;
+  try { data = yaml.load(m[1]) || null; } catch (_) { data = null; }
+  const content = input.slice(m[0].length);
+  return { data, content };
+}
 
 // ESM-only in v3; load dynamically from CJS
 let MDXProviderCached = null;
@@ -39,7 +53,8 @@ async function loadUiComponents() {
 }
 
 function extractTitle(mdxSource) {
-  const m = mdxSource.match(/^\s*#\s+(.+)\s*$/m);
+  const { content } = parseFrontmatter(String(mdxSource || ''));
+  const m = content.match(/^\s*#\s+(.+)\s*$/m);
   return m ? m[1].trim() : 'Untitled';
 }
 
@@ -87,7 +102,8 @@ async function loadAppWrapper() {
     throw new Error('Missing required file: content/_app.mdx');
   }
   const { compile } = await import('@mdx-js/mdx');
-  const source = await fsp.readFile(appPath, 'utf8');
+  const raw = await fsp.readFile(appPath, 'utf8');
+  const { content: source } = parseFrontmatter(raw);
   let code = String(
     await compile(source, {
       jsx: false,
@@ -134,7 +150,8 @@ async function loadAppWrapper() {
 
 async function compileMdxFile(filePath, outPath, Layout, extraProps = {}) {
   const { compile } = await import('@mdx-js/mdx');
-  const source = await fsp.readFile(filePath, 'utf8');
+  const raw = await fsp.readFile(filePath, 'utf8');
+  const { content: source } = parseFrontmatter(raw);
   const compiled = await compile(source, {
     jsx: false,
     development: false,
@@ -185,7 +202,8 @@ async function compileMdxFile(filePath, outPath, Layout, extraProps = {}) {
 
 async function compileMdxToComponent(filePath) {
   const { compile } = await import('@mdx-js/mdx');
-  const source = await fsp.readFile(filePath, 'utf8');
+  const raw = await fsp.readFile(filePath, 'utf8');
+  const { content: source } = parseFrontmatter(raw);
   const compiled = await compile(source, {
     jsx: false,
     development: false,
@@ -274,9 +292,11 @@ async function ensureClientRuntime() {
 module.exports = {
   extractTitle,
   isReservedFile,
+  parseFrontmatter,
   compileMdxFile,
   compileMdxToComponent,
   loadCustomLayout,
   loadAppWrapper,
   ensureClientRuntime,
+  resetMdxCaches: function() { try { DIR_LAYOUTS.clear(); } catch (_) {}; APP_WRAPPER = null; },
 };

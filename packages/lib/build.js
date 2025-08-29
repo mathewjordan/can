@@ -5,6 +5,37 @@ const search = require('./search');
 const { log, logLine } = require('./log');
 
 let PAGES = [];
+const LAYOUT_META = new Map(); // cache: dir -> frontmatter data for _layout.mdx in that dir
+
+async function getNearestLayoutMeta(filePath) {
+  const startDir = path.dirname(filePath);
+  let dir = startDir;
+  while (dir && dir.startsWith(CONTENT_DIR)) {
+    const key = path.resolve(dir);
+    if (LAYOUT_META.has(key)) {
+      const cached = LAYOUT_META.get(key);
+      if (cached) return cached;
+    }
+    const candidate = path.join(dir, '_layout.mdx');
+    if (fs.existsSync(candidate)) {
+      try {
+        const raw = await fsp.readFile(candidate, 'utf8');
+        const fm = mdx.parseFrontmatter(raw);
+        const data = fm && fm.data ? fm.data : null;
+        LAYOUT_META.set(key, data);
+        if (data) return data;
+      } catch (_) {
+        LAYOUT_META.set(key, null);
+      }
+    } else {
+      LAYOUT_META.set(key, null);
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return null;
+}
 
 function mapOutPath(filePath) {
   const rel = path.relative(CONTENT_DIR, filePath);
@@ -78,6 +109,9 @@ async function build() {
     console.error('No content directory found at', CONTENT_DIR);
     process.exit(1);
   }
+  // Reset MDX and layout metadata caches for accurate dev rebuilds
+  try { if (mdx && typeof mdx.resetMdxCaches === 'function') mdx.resetMdxCaches(); } catch (_) {}
+  try { if (typeof LAYOUT_META !== 'undefined' && LAYOUT_META && typeof LAYOUT_META.clear === 'function') LAYOUT_META.clear(); } catch (_) {}
   await cleanDir(OUT_DIR);
   logLine('✓ Cleaned output directory\n', 'cyan');
   await ensureStyles();
@@ -100,9 +134,37 @@ async function build() {
       else if (e.isFile() && /\.mdx$/i.test(p) && !mdx.isReservedFile(p)) {
         const base = path.basename(p).toLowerCase();
         const src = await fsp.readFile(p, 'utf8');
+        const fm = mdx.parseFrontmatter(src);
         const title = mdx.extractTitle(src);
         const rel = path.relative(CONTENT_DIR, p).replace(/\.mdx$/i, '.html');
-        if (base !== 'sitemap.mdx') pages.push({ title, href: rel.split(path.sep).join('/') });
+        if (base !== 'sitemap.mdx') {
+          // Determine search inclusion/type via frontmatter on page and nearest directory layout
+          const href = rel.split(path.sep).join('/');
+          const underSearch = /^search\//i.test(href) || href.toLowerCase() === 'search.html';
+          let include = !underSearch;
+          let resolvedType = null;
+          const pageFm = fm && fm.data ? fm.data : null;
+          if (pageFm) {
+            if (pageFm.search === false) include = false;
+            if (Object.prototype.hasOwnProperty.call(pageFm, 'type')) {
+              if (pageFm.type) resolvedType = String(pageFm.type);
+              else include = false; // explicit empty/null type excludes
+            } else {
+              // Frontmatter present but no type => exclude per policy
+              include = false;
+            }
+          }
+          if (include && !resolvedType) {
+            // Inherit from nearest _layout.mdx frontmatter if available
+            const layoutMeta = await getNearestLayoutMeta(p);
+            if (layoutMeta && layoutMeta.type) resolvedType = String(layoutMeta.type);
+          }
+          if (include && !resolvedType) {
+            // No page/layout frontmatter; default generic page
+            if (!pageFm) resolvedType = 'page';
+          }
+          pages.push({ title, href, searchInclude: include && !!resolvedType, searchType: resolvedType || undefined });
+        }
       }
     }
   }
@@ -122,12 +184,16 @@ async function build() {
       await search.buildSearchPage();
       logLine('✓ Created search page (empty index)', 'cyan');
     }
-    if (Array.isArray(searchRecords)) {
-      await search.writeSearchIndex(searchRecords);
-      await search.ensureSearchRuntime();
-      await search.buildSearchPage();
-      logLine(`✓ Search index: ${searchRecords.length} records\n`, 'cyan');
-    }
+    // Always (re)write the search index combining IIIF and MDX pages
+    const mdxRecords = (PAGES || [])
+      .filter((p) => p && p.href && p.searchInclude)
+      .map((p) => ({ title: p.title || p.href, href: p.href, type: p.searchType || 'page' }));
+    const iiifRecords = Array.isArray(searchRecords) ? searchRecords : [];
+    const combined = [...iiifRecords, ...mdxRecords];
+    await search.writeSearchIndex(combined);
+    await search.ensureSearchRuntime();
+    await search.buildSearchPage();
+    logLine(`✓ Search index: ${combined.length} records\n`, 'cyan');
   } catch (_) {}
 }
 

@@ -21,23 +21,77 @@ async function ensureSearchRuntime() {
       data.forEach((rec, i) => { index.add(i, rec.title || ''); idToRec.set(i, rec); });
       const $ = (sel) => document.querySelector(sel);
       const input = $('#search-input');
-      const list = $('#search-results');
+      const resultsContainer = $('#search-results');
+      const listAll = resultsContainer && resultsContainer.tagName === 'UL' ? resultsContainer : null;
       const countEl = $('#search-count');
       const summaryEl = $('#search-summary');
+      const filtersEl = $('#search-filters');
+      // Discover types and prepare filters dynamically
+      const types = Array.from(new Set(data.map((r) => r && r.type ? String(r.type) : 'page')));
+      const typeKey = (t) => String(t || 'page').toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+      const typeFilters = new Map();
+      types.forEach((t) => {
+        const key = typeKey(t);
+        const cbId = 'search-filter-' + key;
+        let cb = document.getElementById(cbId);
+        if (!cb && filtersEl) {
+          const label = document.createElement('label');
+          cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.id = cbId;
+          cb.checked = true;
+          label.appendChild(cb);
+          label.appendChild(document.createTextNode(' ' + t.charAt(0).toUpperCase() + t.slice(1)));
+          filtersEl.appendChild(label);
+        }
+        typeFilters.set(t, cb ? !!cb.checked : true);
+        if (cb) cb.addEventListener('change', () => { typeFilters.set(t, !!cb.checked); search(input ? input.value : ''); });
+      });
       let currentQuery = '';
       function render(ids) {
-        if (!list) return;
-        const html = (ids || []).map((i) => {
+        // Group by type
+        const grouped = new Map();
+        (ids || []).forEach((i) => {
           const r = idToRec.get(i);
-          if (!r) return '';
+          if (!r) return;
           const esc = (s) => String(s||'').replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
           var base = ${JSON.stringify(BASE_PATH)};
           var pref = base ? base : '';
           var href = (pref ? pref : '') + '/' + r.href;
-          return '<li><a href="' + href + '">' + esc(r.title || r.href) + '</a></li>';
-        }).join('');
-        const shown = (ids || []).length;
-        list.innerHTML = html || '<li><em>No results</em></li>';
+          const li = '<li><a href="' + href + '">' + esc(r.title || r.href) + '</a></li>';
+          const t = r.type || 'page';
+          if (!grouped.has(t)) grouped.set(t, []);
+          grouped.get(t).push(li);
+        });
+        // Try specific per-type lists if present
+        let usedSpecific = false;
+        grouped.forEach((items, t) => {
+          const el = document.getElementById('search-results-' + typeKey(t));
+          if (el) {
+            usedSpecific = true;
+            const enabled = typeFilters.get(t) !== false;
+            el.innerHTML = enabled ? (items.join('') || '<li><em>No ' + t + ' results</em></li>') : '';
+          }
+        });
+        // Count shown across enabled groups
+        let shown = 0;
+        grouped.forEach((items, t) => { if (typeFilters.get(t) !== false) shown += items.length; });
+        if (!usedSpecific) {
+          if (resultsContainer && resultsContainer.tagName !== 'UL') {
+            const html = types.map((t) => {
+              if (typeFilters.get(t) === false) return '';
+              const items = grouped.get(t) || [];
+              const title = t.charAt(0).toUpperCase() + t.slice(1);
+              const lis = items.join('') || '<li><em>No ' + t + ' results</em></li>';
+              return '<h2>' + title + '</h2><ul id="search-results-' + typeKey(t) + '">' + lis + '</ul>';
+            }).join('');
+            resultsContainer.innerHTML = html || '<p><em>No results</em></p>';
+          } else if (listAll) {
+            const combined = [];
+            types.forEach((t) => { if (typeFilters.get(t) !== false) combined.push(...(grouped.get(t) || [])); });
+            listAll.innerHTML = combined.join('') || '<li><em>No results</em></li>';
+          }
+        }
         if (countEl) countEl.textContent = String(shown);
         if (summaryEl) {
           const esc = (s) => String(s||'').replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
@@ -62,6 +116,7 @@ async function ensureSearchRuntime() {
         input.value = initial;
         input.addEventListener('input', (e) => search(e.target.value));
       }
+      // Filter events are wired when filters are created above
       if (initial) search(initial); else showAll();
     }
     if (document.readyState !== 'loading') boot();
@@ -85,13 +140,18 @@ async function buildSearchPage() {
     const outPath = path.join(OUT_DIR, 'search.html');
     ensureDirSync(path.dirname(outPath));
     // Provide composable primitives for MDX layout: form + results
-    const formEl = React.createElement('input', {
-      id: 'search-input',
-      type: 'search',
-      placeholder: 'Type to search…',
-      style: { width: '100%', padding: '0.5rem' },
-    });
-    const resultsEl = React.createElement('ul', { id: 'search-results' });
+    const formEl = React.createElement(
+      'div',
+      null,
+      React.createElement('input', {
+        id: 'search-input',
+        type: 'search',
+        placeholder: 'Type to search…',
+        style: { width: '100%', padding: '0.5rem', marginBottom: '0.5rem' },
+      }),
+      React.createElement('div', { id: 'search-filters', style: { display: 'flex', gap: '1rem', alignItems: 'center', flexWrap: 'wrap' } })
+    );
+    const resultsEl = React.createElement('div', { id: 'search-results' });
     const countEl = React.createElement('span', { id: 'search-count' });
     const summaryEl = React.createElement('div', { id: 'search-summary' });
 

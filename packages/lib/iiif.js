@@ -418,6 +418,7 @@ async function buildIiifCollectionPages(CONFIG) {
             id: String(manifest.id || id),
             title,
             href: href.split(path.sep).join("/"),
+            type: 'work',
           });
         } catch (e) {
           lns.push([`IIIF: failed to render for ${id || '<unknown>'} — ${e.message}`, 'red']);

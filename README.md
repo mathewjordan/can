@@ -56,6 +56,9 @@ Example:
 Notes:
 - If `content/search/_layout.mdx` is absent, a minimal fallback page is generated.
 - Client behavior is provided by `site/search.js`, which wires the input and updates count/summary.
+- Type filters and grouping:
+  - The search runtime auto-discovers record types in `search-index.json` (e.g., `page`, `work`, `docs`) and renders type checkboxes into `#search-filters`.
+  - Results are grouped by type inside `#search-results`. To control placement, add per-type lists with IDs `search-results-<type>` (e.g., `search-results-docs`), otherwise grouped sections are generated automatically.
 
 ## Deploy to GitHub Pages
 - Workflow: `.github/workflows/deploy-pages.yml` builds `site/` and deploys to Pages.

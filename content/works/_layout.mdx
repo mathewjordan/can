@@ -1,10 +1,6 @@
-# {props.manifest?.label?.en?.[0] || String(props.manifest?.label || 'Untitled')}
-
-<p>
-  <strong>ID:</strong> {props.manifest?.id}
-</p>
-
-<Viewer iiifContent={props.manifest.id} />
+---
+type: work
+---
 
 <HelloWorld />
 
@@ -14,4 +10,8 @@
   {(props.manifest?.items || []).map((canvas) => (
     <li key={canvas.id}>{canvas.label?.en?.[0] || canvas.id}</li>
   ))}
-</ul>{" "}
+</ul>
+
+<Viewer iiifContent={props.manifest.id} />
+
+Similar works:
