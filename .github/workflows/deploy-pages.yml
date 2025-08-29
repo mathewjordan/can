@@ -28,14 +28,27 @@ jobs:
           cache: "npm"
 
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm config set fund false
+          npm config set audit false
+          npm ci --no-audit --no-fund || npm install --no-audit --no-fund
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
 
       - name: Build site
         env:
           # Optional: tune IIIF build performance in CI
           CANOPY_CHUNK_SIZE: "10"
           CANOPY_FETCH_CONCURRENCY: "6"
+          # Optional: override collection in CI to reduce build time
+          # CANOPY_COLLECTION_URI: https://iiif.io/api/cookbook/recipe/0032-collection/collection.json
         run: npm run build
+
+      - name: Inspect build output
+        run: |
+          du -sh site || true
+          ls -lah site || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
