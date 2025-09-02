@@ -2,7 +2,10 @@ name: Update template branch
 
 on:
   push:
-    branches: [ main ]
+    branches: [main]
+
+permissions:
+  contents: write
 
 jobs:
   build-template:
@@ -23,29 +26,34 @@ jobs:
           echo "VERSION=$(npm view @canopy-iiif/lib version || echo '')" >> $GITHUB_OUTPUT
 
       - name: Prepare clean template
+        env:
+          VERSION: ${{ steps.ver.outputs.VERSION }}
         run: |
           rm -rf dist-template
           mkdir -p dist-template
           rsync -a --delete \
             --exclude ".git" \
             --exclude "node_modules" \
+            --exclude "AGENTS.md" \
             --exclude "packages" \
             --exclude ".cache" \
+            --exclude ".changeset" \
             --exclude ".github/workflows/template.yml" \
+            --exclude ".github/workflows/retarget-pr-base.yml" \
             ./ dist-template/
 
-          VERSION="${{ steps.ver.outputs.VERSION }}"
-          node -e "const fs=require('fs');const p='dist-template/package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));if(j.dependencies&&j.dependencies['@canopy-iiif/lib']){j.dependencies['@canopy-iiif/lib']=VERSION?('^'+VERSION):'*'}fs.writeFileSync(p,JSON.stringify(j,null,2))"
+          node -e "const fs=require('fs');const v=process.env.VERSION||'';const p='dist-template/package.json';const j=JSON.parse(fs.readFileSync(p,'utf8'));if(j.dependencies&&j.dependencies['@canopy-iiif/lib']){j.dependencies['@canopy-iiif/lib']=v?('^'+v):'*'}fs.writeFileSync(p,JSON.stringify(j,null,2))"
 
       - name: Push to template branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           cd dist-template
-          git init
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git init -b main
+          git config user.name "Mat Jordan"
+          git config user.email "mat@northwestern.edu"
           git add .
-          git commit -m "Update template from main"
+          git commit -m "Create new template from main"
           git branch -M template
-          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git" template
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git"
+          git push --force origin template

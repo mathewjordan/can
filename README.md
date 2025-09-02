@@ -5,11 +5,13 @@
 Static site generator powered by MDX and IIIF. Use `@canopy-iiif/lib` to build content from `content/` and generate HTML in `site/`.
 
 ## Quick Start
+
 - Install: `npm install`
 - Develop: `npm run dev` (serves `http://localhost:3000`)
 - Build: `npm run build`
 
 ## Content Tree
+
 ```
 content/
   _layout.mdx          # optional: site-wide layout wrapper
@@ -24,6 +26,7 @@ content/
 ```
 
 Build output goes to `site/`. Development cache lives in `.cache/`:
+
 - `.cache/mdx`: transient compiled MDX modules used to render MDX/JSX.
 - `.cache/iiif`: IIIF cache used by the builder:
   - `index.json`: primary index storing `byId` (Collection/Manifest ids to slugs) and `collection` metadata (uri, hash, updatedAt).
@@ -83,6 +86,7 @@ Example:
 ```
 
 Notes:
+
 - If `content/search/_layout.mdx` is absent, a minimal fallback page is generated.
 - Client behavior is provided by `site/search.js`, which wires the input and updates count/summary.
 - Type filters and grouping:
@@ -90,6 +94,7 @@ Notes:
   - Results are grouped by type inside `#search-results`. To control placement, add per-type lists with IDs `search-results-<type>` (e.g., `search-results-docs`), otherwise grouped sections are generated automatically.
 
 ## Deploy to GitHub Pages
+
 - Workflow: `.github/workflows/deploy-pages.yml` builds `site/` and deploys to Pages.
 - Enable Pages: in repository Settings → Pages → set Source to "GitHub Actions" (or use the workflow’s automatic enablement if allowed).
 - Trigger: pushes to `main` (or run manually via Actions → "Deploy to GitHub Pages").
@@ -97,12 +102,16 @@ Notes:
 - Live site URL:
 
 <!-- PAGES_URL_START -->
+
 Live: https://mathewjordan.github.io/can/
+
 <!-- PAGES_URL_END -->
+
 - CI tuning (optional):
   - `canopy.yml` → `iiif.chunkSize`, `iiif.concurrency` to control fetch/build parallelism.
   - Env overrides (in workflow): `CANOPY_CHUNK_SIZE`, `CANOPY_FETCH_CONCURRENCY`, and `CANOPY_COLLECTION_URI` (use a small collection for faster CI).
 - Project Pages base path: links currently use absolute `/…`. If deploying under `/<repo>` you may want base‑path aware links; open an issue if you want this wired in.
 
 ## Contributing
+
 See `CONTRIBUTING.md` for repository structure, versioning with Changesets, release flow, and the template-branch workflow.

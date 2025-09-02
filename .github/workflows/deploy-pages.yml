@@ -60,7 +60,7 @@ jobs:
         run: npm run build
 
       - name: Verify pages were generated
-        run: node scripts/verify-build.js
+        run: node packages/helpers/verify-build.js
 
       - name: Inspect build output
         run: |
