@@ -13,7 +13,7 @@
     "test": "echo \"No tests yet\" && exit 0",
     "changeset": "changeset",
     "version:packages": "changeset version",
-    "release": "node scripts/guard-publish.js && changeset publish"
+    "release": "node packages/helpers/guard-publish.js && changeset publish"
   },
   "dependencies": {
     "@canopy-iiif/ui": "workspace:*",

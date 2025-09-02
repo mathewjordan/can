@@ -1,10 +1,11 @@
 const fs = require('fs');
+const fsp = fs.promises;
 const path = require('path');
 const { spawn } = require('child_process');
 const { build } = require('./build');
 const http = require('http');
 const url = require('url');
-const { CONTENT_DIR, OUT_DIR } = require('./common');
+const { CONTENT_DIR, OUT_DIR, ASSETS_DIR, ensureDirSync } = require('./common');
 const PORT = Number(process.env.PORT || 3000);
 let onBuildSuccess = () => {};
 let onBuildStart = () => {};
@@ -67,6 +68,84 @@ function watchPerDir() {
 
   watchDir(CONTENT_DIR);
   scan(CONTENT_DIR);
+
+  return () => {
+    for (const w of watchers.values()) w.close();
+  };
+}
+
+// Asset live-reload: copy changed file(s) into site/ without full rebuild
+async function syncAsset(relativePath) {
+  try {
+    if (!relativePath) return;
+    const src = path.join(ASSETS_DIR, relativePath);
+    const rel = path.normalize(relativePath);
+    const dest = path.join(OUT_DIR, rel);
+    const exists = fs.existsSync(src);
+    if (exists) {
+      const st = fs.statSync(src);
+      if (st.isDirectory()) {
+        ensureDirSync(dest);
+        return;
+      }
+      ensureDirSync(path.dirname(dest));
+      await fsp.copyFile(src, dest);
+      console.log(`[assets] Copied ${relativePath} -> ${path.relative(process.cwd(), dest)}`);
+    } else {
+      // Removed or renamed away: remove dest
+      try { await fsp.rm(dest, { force: true, recursive: true }); } catch (_) {}
+      console.log(`[assets] Removed ${relativePath}`);
+    }
+  } catch (e) {
+    console.warn('[assets] sync failed:', e && e.message ? e.message : e);
+  }
+}
+
+function tryRecursiveWatchAssets() {
+  try {
+    const watcher = fs.watch(ASSETS_DIR, { recursive: true }, (eventType, filename) => {
+      if (!filename) return;
+      console.log(`[assets] ${eventType}: ${filename}`);
+      // Copy just the changed asset and trigger reload
+      syncAsset(filename).then(() => { try { onBuildSuccess(); } catch (_) {} });
+    });
+    return watcher;
+  } catch (e) {
+    return null;
+  }
+}
+
+function watchAssetsPerDir() {
+  const watchers = new Map();
+
+  function watchDir(dir) {
+    if (watchers.has(dir)) return;
+    try {
+      const w = fs.watch(dir, (eventType, filename) => {
+        const rel = filename ? path.relative(ASSETS_DIR, path.join(dir, filename)) : path.relative(ASSETS_DIR, dir);
+        console.log(`[assets] ${eventType}: ${path.join(dir, filename || '')}`);
+        // If a new directory appears, add a watcher for it on next scan
+        scan(dir);
+        syncAsset(rel).then(() => { try { onBuildSuccess(); } catch (_) {} });
+      });
+      watchers.set(dir, w);
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  function scan(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) watchDir(p);
+    }
+  }
+
+  if (fs.existsSync(ASSETS_DIR)) {
+    watchDir(ASSETS_DIR);
+    scan(ASSETS_DIR);
+  }
 
   return () => {
     for (const w of watchers.values()) w.close();
@@ -206,6 +285,12 @@ function dev() {
   console.log('Watching', CONTENT_DIR, '(Ctrl+C to stop)');
   const rw = tryRecursiveWatch();
   if (!rw) watchPerDir();
+  // Watch assets for live copy without full rebuild
+  if (fs.existsSync(ASSETS_DIR)) {
+    console.log('Watching', ASSETS_DIR, '(assets live-reload)');
+    const arw = tryRecursiveWatchAssets();
+    if (!arw) watchAssetsPerDir();
+  }
 }
 
 module.exports = { dev };

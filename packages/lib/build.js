@@ -1,4 +1,4 @@
-const { fs, fsp, path, CONTENT_DIR, OUT_DIR, ensureDirSync, cleanDir, htmlShell } = require('./common');
+const { fs, fsp, path, CONTENT_DIR, OUT_DIR, ASSETS_DIR, ensureDirSync, cleanDir, htmlShell } = require('./common');
 const mdx = require('./mdx');
 const iiif = require('./iiif');
 const search = require('./search');
@@ -102,6 +102,31 @@ async function walk(dir) {
   }
 }
 
+async function copyAssets() {
+  try {
+    if (!fs.existsSync(ASSETS_DIR)) return;
+  } catch (_) { return; }
+  async function walkAssets(dir) {
+    const entries = await fsp.readdir(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const src = path.join(dir, e.name);
+      const rel = path.relative(ASSETS_DIR, src);
+      const dest = path.join(OUT_DIR, rel);
+      if (e.isDirectory()) {
+        ensureDirSync(dest);
+        await walkAssets(src);
+      } else if (e.isFile()) {
+        ensureDirSync(path.dirname(dest));
+        await fsp.copyFile(src, dest);
+        try { log(`• Asset ${path.relative(process.cwd(), dest)}\n`, 'cyan', { dim: true }); } catch (_) {}
+      }
+    }
+  }
+  try { logLine('• Copying assets...', 'blue', { bright: true }); } catch (_) {}
+  await walkAssets(ASSETS_DIR);
+  try { logLine('✓ Assets copied\n', 'green'); } catch (_) {}
+}
+
 // No global default layout; directory-scoped layouts are resolved per-page
 
 async function build() {
@@ -118,6 +143,8 @@ async function build() {
   logLine('✓ Wrote styles.css\n', 'cyan');
   await mdx.ensureClientRuntime();
   logLine('✓ Prepared client hydration runtime\n', 'cyan', { dim: true });
+  // Copy assets from assets/ to site/
+  await copyAssets();
   // No-op: global layout removed
 
   // Build IIIF works + collect search records

@@ -1,9 +1,14 @@
 {
   "name": "@canopy-iiif/lib",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "main": "index.js",
   "type": "commonjs",
+  "files": [
+    "*.js",
+    "*.json",
+    "*.css"
+  ],
   "publishConfig": {
     "access": "public"
   },

@@ -6,7 +6,7 @@ This repository is a minimal Node.js project. Use this guide to add code and gro
 - `src/`: application code (entrypoint `src/index.js`).
 - `tests/`: unit tests and fixtures.
 - `assets/`: static files if needed.
-- `scripts/`: local tooling and maintenance scripts.
+- `packages/helpers/`: local tooling and maintenance scripts (kept out of root).
 - Root: `package.json`, `.gitignore`, docs.
 
 ## Build, Test, and Development Commands
@@ -77,6 +77,50 @@ Goal: Allow authors to fully compose the search page via MDX, while the builder 
   - If authors need custom result item markup, we can evolve the runtime to support a templating hook or expose a hydrated component, but that is out of scope for the current minimal approach.
 
 ## Search Index Extensibility
+
+## Helpers Package and Root Cleanliness
+
+- Keep the repository root clean. Do not add a top-level `scripts/` folder.
+- All helper scripts live under `packages/helpers/`.
+- Examples:
+  - Release guard: `node packages/helpers/guard-publish.js`
+  - Build check: `node packages/helpers/verify-build.js`
+
+## Package Management
+
+- Standardize on npm workspaces. Use `npm -w <workspace> run <script>` in root scripts.
+- pnpm is not used here; `pnpm-lock.yaml` and `pnpm-workspace.yaml` have been removed and `.pnpm-store/` is ignored.
+
+## Assets and Live Reload
+
+- Static files under `assets/` are copied to the site root (preserving subpaths) during build.
+  - Example: `assets/images/example.jpg` → `site/images/example.jpg`.
+- During `npm run dev`, changes in `assets/` are watched and synced directly to `site/` without triggering a full rebuild of MDX or IIIF content; the browser live‑reloads automatically.
+
+## IIIF Build
+
+- Enable IIIF work page generation by adding `content/works/_layout.mdx`. The layout receives `props.manifest` (normalized to IIIF Presentation 3 when possible).
+- The collection URI is configured via `canopy.yml` (`collection.uri`) or the `CANOPY_COLLECTION_URI` environment variable.
+- Output pages are written to `site/works/<slug>.html`.
+- Performance tuning: `iiif.chunkSize` and `iiif.concurrency` in `canopy.yml`, or env vars `CANOPY_CHUNK_SIZE` and `CANOPY_FETCH_CONCURRENCY`.
+
+## IIIF Cache
+
+- Location: `.cache/iiif/`
+  - `index.json`: primary index with `byId` (Collection/Manifest ids → slugs/parents) and `collection` metadata (uri, hash, updatedAt).
+  - `manifests/{slug}.json`: cached normalized Manifest JSON per work.
+- Changing the configured collection URI resets the manifest cache. To force a clean fetch, delete `.cache/iiif/`.
+
+## Development Notes
+
+- `npm run dev` starts a local server with live reload.
+- MDX changes under `content/` trigger a full site rebuild + reload.
+- Asset changes under `assets/` sync only the changed files to `site/` and reload without a full rebuild.
+
+## Quick Commands
+
+- Release guard: `node packages/helpers/guard-publish.js`
+- Build verification: `node packages/helpers/verify-build.js`
 
 We index two sources: IIIF Manifests ("works") and static MDX pages ("pages"). Keep this simple and predictable.
 

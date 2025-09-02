@@ -24,8 +24,37 @@ content/
 ```
 
 Build output goes to `site/`. Development cache lives in `.cache/`:
-- `.cache/mdx`: transient compiled MDX modules
-- `.cache/iiif`: cached IIIF `collection.json`, `manifest-index.json`, and `manifests/{slug}.json`
+- `.cache/mdx`: transient compiled MDX modules used to render MDX/JSX.
+- `.cache/iiif`: IIIF cache used by the builder:
+  - `index.json`: primary index storing `byId` (Collection/Manifest ids to slugs) and `collection` metadata (uri, hash, updatedAt).
+  - `manifests/{slug}.json`: cached, normalized Manifest JSON per work page.
+  - Legacy files like `manifest-index.json` may be removed as part of migrations.
+  - Clear this cache by deleting `.cache/iiif/` if you need a fresh fetch.
+
+## Assets
+
+Place static files under `assets/` and they will be copied to the site root, preserving subpaths. For example:
+
+- `assets/images/example.jpg` → `site/images/example.jpg`
+- `assets/downloads/file.pdf` → `site/downloads/file.pdf`
+
+## Development
+
+- Run `npm run dev` to start a local server at `http://localhost:3000` with live reload.
+- Editing MDX under `content/` triggers a site rebuild and automatic browser reload.
+- Editing files under `assets/` copies only the changed files into `site/` (no full rebuild) and reloads the browser.
+
+## IIIF Build
+
+- Layout: add `content/works/_layout.mdx` to enable IIIF work page generation. The layout receives `props.manifest` (normalized to Presentation 3).
+- Source: collection URI comes from `canopy.yml` (`collection.uri`) or `CANOPY_COLLECTION_URI` env var.
+- Behavior:
+  - Recursively walks the collection and subcollections, fetching Manifests.
+  - Normalizes resources using `@iiif/helpers` to v3 where possible.
+  - Caches fetched Manifests in `.cache/iiif/manifests/` and tracks ids/slugs in `.cache/iiif/index.json`.
+  - Emits one HTML page per Manifest under `site/works/<slug>.html`.
+- Performance: tune with `iiif.chunkSize` and `iiif.concurrency` in `canopy.yml` or via env `CANOPY_CHUNK_SIZE` and `CANOPY_FETCH_CONCURRENCY`.
+- Cache notes: switching `collection.uri` resets the manifest cache; you can also delete `.cache/iiif/` to force a refetch.
 
 ## Search Page (MDX Composition)
 

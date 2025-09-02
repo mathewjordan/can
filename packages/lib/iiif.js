@@ -18,7 +18,11 @@ const { log, logLine, logResponse } = require("./log");
 const IIIF_CACHE_DIR = path.resolve(".cache/iiif");
 const IIIF_CACHE_MANIFESTS_DIR = path.join(IIIF_CACHE_DIR, "manifests");
 const IIIF_CACHE_COLLECTION = path.join(IIIF_CACHE_DIR, "collection.json");
-const IIIF_CACHE_INDEX = path.join(IIIF_CACHE_DIR, "manifest-index.json");
+// Primary global index location
+const IIIF_CACHE_INDEX = path.join(IIIF_CACHE_DIR, "index.json");
+// Legacy locations kept for backward compatibility (read + optional write)
+const IIIF_CACHE_INDEX_LEGACY = path.join(IIIF_CACHE_DIR, "manifest-index.json");
+const IIIF_CACHE_INDEX_MANIFESTS = path.join(IIIF_CACHE_MANIFESTS_DIR, "manifest-index.json");
 
 function firstLabelString(label) {
   if (!label) return "Untitled";
@@ -91,21 +95,54 @@ function deepSort(value) {
 
 async function loadManifestIndex() {
   try {
+    // Try primary path first
     if (fs.existsSync(IIIF_CACHE_INDEX)) {
       const idx = await readJson(IIIF_CACHE_INDEX);
       if (idx && typeof idx === 'object') {
-        return { byId: idx.byId || {}, collection: idx.collection || null, parents: idx.parents || {} };
+        const byId = Array.isArray(idx.byId)
+          ? idx.byId
+          : (idx.byId && typeof idx.byId === 'object')
+            ? Object.keys(idx.byId).map((k) => ({ id: k, type: 'Manifest', slug: String(idx.byId[k] || ''), parent: (idx.parents && idx.parents[k]) || '' }))
+            : [];
+        return { byId, collection: idx.collection || null };
+      }
+    }
+    // Fallback: legacy in .cache/iiif
+    if (fs.existsSync(IIIF_CACHE_INDEX_LEGACY)) {
+      const idx = await readJson(IIIF_CACHE_INDEX_LEGACY);
+      if (idx && typeof idx === 'object') {
+        const byId = Array.isArray(idx.byId)
+          ? idx.byId
+          : (idx.byId && typeof idx.byId === 'object')
+            ? Object.keys(idx.byId).map((k) => ({ id: k, type: 'Manifest', slug: String(idx.byId[k] || ''), parent: (idx.parents && idx.parents[k]) || '' }))
+            : [];
+        return { byId, collection: idx.collection || null };
+      }
+    }
+    // Fallback: legacy in manifests subdir
+    if (fs.existsSync(IIIF_CACHE_INDEX_MANIFESTS)) {
+      const idx = await readJson(IIIF_CACHE_INDEX_MANIFESTS);
+      if (idx && typeof idx === 'object') {
+        const byId = Array.isArray(idx.byId)
+          ? idx.byId
+          : (idx.byId && typeof idx.byId === 'object')
+            ? Object.keys(idx.byId).map((k) => ({ id: k, type: 'Manifest', slug: String(idx.byId[k] || ''), parent: (idx.parents && idx.parents[k]) || '' }))
+            : [];
+        return { byId, collection: idx.collection || null };
       }
     }
   } catch (_) {}
-  return { byId: {}, collection: null, parents: {} };
+  return { byId: [], collection: null };
 }
 
 async function saveManifestIndex(index) {
   try {
     ensureDirSync(IIIF_CACHE_DIR);
-    const out = { byId: index.byId || {}, collection: index.collection || null, parents: index.parents || {} };
+    const out = { byId: Array.isArray(index.byId) ? index.byId : [], collection: index.collection || null };
     await fsp.writeFile(IIIF_CACHE_INDEX, JSON.stringify(out, null, 2), 'utf8');
+    // Remove legacy files to avoid confusion
+    try { await fsp.rm(IIIF_CACHE_INDEX_LEGACY, { force: true }); } catch (_) {}
+    try { await fsp.rm(IIIF_CACHE_INDEX_MANIFESTS, { force: true }); } catch (_) {}
   } catch (_) {}
 }
 
@@ -113,7 +150,11 @@ async function loadCachedManifestById(id) {
   if (!id) return null;
   try {
     const index = await loadManifestIndex();
-    const slug = index.byId && index.byId[id];
+    let slug = null;
+    if (Array.isArray(index.byId)) {
+      const entry = index.byId.find((e) => e && e.id === id && e.type === 'Manifest');
+      slug = entry && entry.slug;
+    }
     if (!slug) return null;
     const p = path.join(IIIF_CACHE_MANIFESTS_DIR, slug + ".json");
     if (!fs.existsSync(p)) return null;
@@ -123,28 +164,30 @@ async function loadCachedManifestById(id) {
   }
 }
 
-async function saveCachedManifest(manifest, id) {
+async function saveCachedManifest(manifest, id, parentId) {
   try {
     const index = await loadManifestIndex();
     const title = firstLabelString(manifest && manifest.label);
     const baseSlug =
       slugify(title || "untitled", { lower: true, strict: true, trim: true }) ||
       "untitled";
-    const usedSlugs = new Set(Object.values(index.byId || {}));
+    const usedSlugs = new Set(
+      (Array.isArray(index.byId) ? index.byId : []).map((e) => e && e.slug).filter(Boolean)
+    );
     let slug = baseSlug;
     let i = 1;
     while (usedSlugs.has(slug)) {
-      const existingId = Object.keys(index.byId).find(
-        (k) => index.byId[k] === slug
-      );
-      if (existingId === id) break;
+      const existing = (index.byId || []).find((e) => e && e.slug === slug);
+      if (existing && existing.id === id) break;
       slug = `${baseSlug}-${i++}`;
     }
     ensureDirSync(IIIF_CACHE_MANIFESTS_DIR);
     const dest = path.join(IIIF_CACHE_MANIFESTS_DIR, slug + ".json");
     await fsp.writeFile(dest, JSON.stringify(manifest, null, 2), "utf8");
-    index.byId = index.byId || {};
-    index.byId[id] = slug;
+    index.byId = Array.isArray(index.byId) ? index.byId : [];
+    const existingEntryIdx = index.byId.findIndex((e) => e && e.id === id && e.type === 'Manifest');
+    const entry = { id: String(id), type: 'Manifest', slug, parent: parentId ? String(parentId) : '' };
+    if (existingEntryIdx >= 0) index.byId[existingEntryIdx] = entry; else index.byId.push(entry);
     await saveManifestIndex(index);
   } catch (_) {}
 }
@@ -214,6 +257,12 @@ async function buildIiifCollectionPages(CONFIG) {
   if (collectionUri) collection = await readJsonFromUri(collectionUri);
   if (!collection) {
     console.warn("IIIF: No collection available; skipping.");
+    // Still write/update global index with configured URI, so other steps can rely on it
+    try {
+      const index = await loadManifestIndex();
+      index.collection = { uri: String(collectionUri || ''), hash: '', updatedAt: new Date().toISOString() };
+      await saveManifestIndex(index);
+    } catch (_) {}
     return { searchRecords: [] };
   }
   try {
@@ -238,9 +287,19 @@ async function buildIiifCollectionPages(CONFIG) {
       );
     } catch (_) {}
     await flushManifestCache();
-    index.byId = {};
+    index.byId = [];
   }
   index.collection = { ...currentSig, updatedAt: new Date().toISOString() };
+  // Upsert root collection entry in index.byId
+  try {
+    const rootId = String(collection.id || collection['@id'] || collectionUri || '');
+    const title = firstLabelString(collection && collection.label);
+    const slug = slugify(title || 'collection', { lower: true, strict: true, trim: true }) || 'collection';
+    index.byId = Array.isArray(index.byId) ? index.byId : [];
+    const existingIdx = index.byId.findIndex((e) => e && e.id === rootId && e.type === 'Collection');
+    const entry = { id: rootId, type: 'Collection', slug, parent: '' };
+    if (existingIdx >= 0) index.byId[existingIdx] = entry; else index.byId.push(entry);
+  } catch (_) {}
   await saveManifestIndex(index);
 
   const WorksLayout = await mdx.compileMdxToComponent(worksLayoutPath);
@@ -264,12 +323,32 @@ async function buildIiifCollectionPages(CONFIG) {
       } else if (t.includes('Collection')) {
         const sub = await readJsonFromUri(String(id));
         const subNorm = await normalizeToV3(sub);
+        try {
+          const title = firstLabelString(subNorm && subNorm.label);
+          const slug = slugify(title || 'collection', { lower: true, strict: true, trim: true }) || 'collection';
+          const idx = await loadManifestIndex();
+          idx.byId = Array.isArray(idx.byId) ? idx.byId : [];
+          const entry = { id: String(subNorm.id || id), type: 'Collection', slug, parent: String(colId || parentUri || '') };
+          const existing = idx.byId.findIndex((e) => e && e.id === entry.id && e.type === 'Collection');
+          if (existing >= 0) idx.byId[existing] = entry; else idx.byId.push(entry);
+          await saveManifestIndex(idx);
+        } catch (_) {}
         await collectTasksFromCollection(subNorm, String(id), visited);
       } else if (/^https?:\/\//i.test(String(id || ''))) {
         const fetched = await readJsonFromUri(String(id));
         const norm = await normalizeToV3(fetched);
         const nt = String((norm && (norm.type || norm['@type'])) || '');
         if (nt.includes('Collection')) {
+          try {
+            const title = firstLabelString(norm && norm.label);
+            const slug = slugify(title || 'collection', { lower: true, strict: true, trim: true }) || 'collection';
+            const idx = await loadManifestIndex();
+            idx.byId = Array.isArray(idx.byId) ? idx.byId : [];
+            const entry = { id: String(norm.id || id), type: 'Collection', slug, parent: String(colId || parentUri || '') };
+            const existing = idx.byId.findIndex((e) => e && e.id === entry.id && e.type === 'Collection');
+            if (existing >= 0) idx.byId[existing] = entry; else idx.byId.push(entry);
+            await saveManifestIndex(idx);
+          } catch (_) {}
           await collectTasksFromCollection(norm, String(id), visited);
         } else if (nt.includes('Manifest')) {
           tasks.push({ id: String(id), parent: String(colId || parentUri || '') });
@@ -325,7 +404,7 @@ async function buildIiifCollectionPages(CONFIG) {
               const remote = await res.json();
               const norm = await normalizeToV3(remote);
               manifest = norm;
-              await saveCachedManifest(manifest, String(id));
+              await saveCachedManifest(manifest, String(id), String(it.parent || ''));
             } else {
               lns.push([`✗ ${String(id)} ➜ ${res ? res.status : 'ERR'}`, 'red']);
               continue;

@@ -1,5 +1,11 @@
 {
   "name": "@canopy-iiif/helpers",
-  "version": "0.0.0",
-  "private": true
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.js",
+  "files": [
+    "*.js"
+  ]
 }
+
